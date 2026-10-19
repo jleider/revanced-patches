@@ -9,7 +9,7 @@ import app.revanced.patcher.returnType
 import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
 
-// This targets the method to get the value of a Feature in the class "com.tumblr.configuration.Feature".
+// This targets the method to get the value of a Feature in Tumblr's configuration class.
 // Features seem to be Tumblr's A/B testing program.
 // Feature states are loaded from the server in the "api-http2.tumblr.com/v2/config" request on (first) startup.
 // A lot of features are returned there, but most of them do not seem to do anything (anymore).
@@ -18,7 +18,7 @@ import com.android.tools.smali.dexlib2.Opcode
 // Some features seem to be very old and never removed, though, such as Google Login.
 // The startIndex of the opcode pattern is at the start of the function after the arg null check.
 // we want to insert our instructions there.
-internal val BytecodePatchContext.getFeatureValueMethodMatch by composingFirstMethod("feature") {
+internal val BytecodePatchContext.getFeatureValueMethodMatch by composingFirstMethod {
     accessFlags(AccessFlags.PUBLIC, AccessFlags.FINAL)
     returnType("Ljava/lang/String;")
     parameterTypes("L", "Z")

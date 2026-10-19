@@ -16,9 +16,9 @@ internal val BytecodePatchContext.postsResponseConstructorMethod by gettingFirst
 // This is the constructor of the Timeline class.
 // It receives the List<TimelineObject> as an argument with a @Json annotation, so this should be the first time
 // that the List<TimelineObject> is exposed in non-library code.
-internal val BytecodePatchContext.timelineConstructorMethod by gettingFirstMethodDeclaratively("timelineObjectsList") {
+internal val BytecodePatchContext.timelineConstructorMethod by gettingFirstMethodDeclaratively {
     definingClass("/Timeline;")
-    custom { parameters[0].type == "Ljava/util/List;" }
+    parameterTypes("Ljava/util/List;", "Lcom/tumblr/rumblr/model/PaginationLink;")
 }
 
 // This gets the extension method TimelineFilterPatch.filterTimeline.
