@@ -4,6 +4,8 @@ import app.revanced.com.android.tools.smali.dexlib2.mutable.MutableMethod.Compan
 import app.revanced.patcher.extensions.addInstructions
 import app.revanced.patcher.extensions.addInstructionsWithLabels
 import app.revanced.patcher.patch.bytecodePatch
+import app.revanced.util.cloneMutableAndPreserveParameters
+import app.revanced.util.numberOfParameterRegistersLogical
 import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.builder.MutableMethodImplementation
 import com.android.tools.smali.dexlib2.immutable.ImmutableMethod
@@ -70,17 +72,25 @@ val overrideFeatureFlagsPatch = bytecodePatch(
             // This is equivalent to
             //   String forcedValue = getValueOverride(feature)
             //   if (forcedValue != null) return forcedValue
-            val getFeatureIndex = match[0]
-            match.method.addInstructionsWithLabels(
+
+            // The matched method does not have enough registers for the hook below,
+            // so it is cloned with additional registers that preserve the parameters.
+            // The clone starts with numberOfParameterRegistersLogical move instructions
+            // which copy the parameter registers, so match indices shift by that amount.
+            // After those moves, the p2 parameter register is dead and can be used as a scratch register.
+            val clonedMethod = match.method.cloneMutableAndPreserveParameters()
+
+            val getFeatureIndex = match[0] + match.method.numberOfParameterRegistersLogical
+            clonedMethod.addInstructionsWithLabels(
                 getFeatureIndex,
                 """
                 # Call the Helper Method with the Feature
                 invoke-virtual {p0, p1}, $configurationClass->getValueOverride($featureClass)Ljava/lang/String;
-                move-result-object v0
+                move-result-object p2
                 # If it returned null, skip
-                if-eqz v0, :is_null
+                if-eqz p2, :is_null
                 # If it didnt return null, return that string
-                return-object v0
+                return-object p2
                 
                 # If our override helper returned null, we let the function continue normally
                 :is_null
