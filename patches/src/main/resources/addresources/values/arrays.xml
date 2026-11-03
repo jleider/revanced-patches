@@ -1,4 +1,38 @@
 <resources>
+    <app id="baconreader">
+        <patch id="layout.comments.loadMoreCommentsPatch">
+            <string-array name="revanced_baconreader_auto_load_more_comments_entries">
+                <item>@string/revanced_baconreader_auto_load_more_comments_entry_0</item>
+                <item>@string/revanced_baconreader_auto_load_more_comments_entry_1</item>
+                <item>@string/revanced_baconreader_auto_load_more_comments_entry_2</item>
+                <item>@string/revanced_baconreader_auto_load_more_comments_entry_3</item>
+                <item>@string/revanced_baconreader_auto_load_more_comments_entry_4</item>
+                <item>@string/revanced_baconreader_auto_load_more_comments_entry_5</item>
+            </string-array>
+            <string-array name="revanced_baconreader_auto_load_more_comments_entry_values">
+                <item>0</item>
+                <item>1</item>
+                <item>2</item>
+                <item>3</item>
+                <item>4</item>
+                <item>5</item>
+            </string-array>
+        </patch>
+        <patch id="layout.avatars.userAvatarsPatch">
+            <string-array name="revanced_baconreader_user_avatar_size_entries">
+                <item>@string/revanced_baconreader_user_avatar_size_entry_0</item>
+                <item>@string/revanced_baconreader_user_avatar_size_entry_1</item>
+                <item>@string/revanced_baconreader_user_avatar_size_entry_2</item>
+                <item>@string/revanced_baconreader_user_avatar_size_entry_3</item>
+            </string-array>
+            <string-array name="revanced_baconreader_user_avatar_size_entry_values">
+                <item>0</item>
+                <item>1</item>
+                <item>2</item>
+                <item>3</item>
+            </string-array>
+        </patch>
+    </app>
     <app id="shared">
         <patch id="layout.branding.baseCustomBrandingPatch">
             <string-array name="revanced_custom_branding_icon_entries">

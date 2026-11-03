@@ -725,12 +725,119 @@ public final class app/revanced/patches/reddit/customclients/baconreader/api/Spo
 	public static final fun getSpoofClientPatch ()Lapp/revanced/patcher/patch/Patch;
 }
 
+public final class app/revanced/patches/reddit/customclients/baconreader/fix/errors/ShowRequestErrorsPatchKt {
+	public static final fun getShowRequestErrorsPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/fix/imgur/FixImgurApiPatchKt {
+	public static final fun getFixImgurApiPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/fix/inbox/FixUnreadMessagesPatchKt {
+	public static final fun getFixUnreadMessagesPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/fix/memes/FixMemeTemplatesPatchKt {
+	public static final fun getFixMemeTemplatesPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
 public final class app/revanced/patches/reddit/customclients/baconreader/fix/redgifs/FixRedgifsApiPatchKt {
 	public static final fun getFixRedgifsApi ()Lapp/revanced/patcher/patch/Patch;
 }
 
+public final class app/revanced/patches/reddit/customclients/baconreader/fix/savemedia/FixEmptySavedFilesPatchKt {
+	public static final fun getFixEmptySavedFilesPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/fix/savemedia/SaveVideosWithSoundPatchKt {
+	public static final fun getSaveVideosWithSoundPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/fix/spoilers/HideFormattedSpoilersPatchKt {
+	public static final fun getHideFormattedSpoilersPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/fix/votes/FixLostVotesPatchKt {
+	public static final fun getFixLostVotesPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/layout/avatars/UserAvatarsPatchKt {
+	public static final fun getUserAvatarsPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/layout/awards/RemoveAwardsPatchKt {
+	public static final fun getRemoveAwardsPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/layout/comments/LoadMoreCommentsPatchKt {
+	public static final fun getLoadMoreCommentsPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/layout/editor/MarkdownEditorPatchKt {
+	public static final fun getMarkdownEditorPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/layout/embedcommentimages/EmbedCommentImagesPatchKt {
+	public static final fun getEmbedCommentImagesPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/layout/flairs/FlairFilterPatchKt {
+	public static final fun getFlairFilterPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/layout/inboxreply/InboxCommentReplyPatchKt {
+	public static final fun getInboxCommentReplyPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/layout/postmedia/ImprovePostMediaLoadingPatchKt {
+	public static final fun getImprovePostMediaLoadingPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/layout/random/RemoveRandomFeedsPatchKt {
+	public static final fun getRemoveRandomFeedsPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/layout/search/CommentSearchPatchKt {
+	public static final fun getCommentSearchPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/layout/sidebar/DisableUnavailableSidebarPatchKt {
+	public static final fun getDisableUnavailableSidebarPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/layout/tables/ShowTablesPatchKt {
+	public static final fun getShowTablesPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/layout/textposticon/TextPostIconPatchKt {
+	public static final fun getTextPostIconPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/layout/thumbnails/FixListThumbnailsPatchKt {
+	public static final fun getFixListThumbnailsPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
 public final class app/revanced/patches/reddit/customclients/baconreader/misc/extension/SharedExtensionPatchKt {
 	public static final fun getSharedExtensionPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/misc/openlinks/PromptToOpenRedditLinksPatchKt {
+	public static final fun getPromptToOpenRedditLinksPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/misc/review/DisableFeedbackPopupPatchKt {
+	public static final fun getDisableFeedbackPopupPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/misc/settings/PreferenceScreen : app/revanced/patches/shared/misc/settings/preference/BasePreferenceScreen {
+	public static final field INSTANCE Lapp/revanced/patches/reddit/customclients/baconreader/misc/settings/PreferenceScreen;
+	public fun commit (Lapp/revanced/patches/shared/misc/settings/preference/PreferenceScreenPreference;)V
+	public final fun getIMAGES ()Lapp/revanced/patches/shared/misc/settings/preference/BasePreferenceScreen$Screen;
+	public final fun getLINKS ()Lapp/revanced/patches/shared/misc/settings/preference/BasePreferenceScreen$Screen;
+}
+
+public final class app/revanced/patches/reddit/customclients/baconreader/misc/settings/SettingsPatchKt {
+	public static final fun getSettingsPatch ()Lapp/revanced/patcher/patch/Patch;
 }
 
 public final class app/revanced/patches/reddit/customclients/boostforreddit/ads/DisableAdsPatchKt {
