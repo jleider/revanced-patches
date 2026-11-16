@@ -30,7 +30,8 @@ internal val BytecodePatchContext.queueAddMethodMatch by composingFirstMethod {
     custom { immutableClassDef.sourceFile == "RequestQueue.java" }
 }
 
-internal val BytecodePatchContext.imgurClientIdMethod by gettingFirstMethodDeclaratively {
-    definingClass(EXTENSION_CLASS_DESCRIPTOR)
-    name("getClientId")
+internal val BytecodePatchContext.albumParseMethodMatch by composingFirstMethod {
+    name("parseNetworkResponse")
+    parameterTypes("Lcom/android/volley/NetworkResponse;")
+    custom { immutableClassDef.sourceFile == "ImgurGalleryRequest.java" }
 }

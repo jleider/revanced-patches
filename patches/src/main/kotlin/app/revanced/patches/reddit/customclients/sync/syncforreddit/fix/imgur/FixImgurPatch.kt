@@ -2,11 +2,9 @@ package app.revanced.patches.reddit.customclients.sync.syncforreddit.fix.imgur
 
 import app.revanced.patcher.extensions.*
 import app.revanced.patcher.patch.bytecodePatch
-import app.revanced.patcher.patch.stringOption
 import app.revanced.patches.reddit.customclients.sync.syncforreddit.extension.sharedExtensionPatch
 import app.revanced.util.getReference
 import app.revanced.util.indexOfFirstInstructionOrThrow
-import app.revanced.util.returnEarly
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 
 internal const val EXTENSION_CLASS_DESCRIPTOR = "Lapp/revanced/extension/syncforreddit/FixImgurPatch;"
@@ -14,7 +12,7 @@ internal const val EXTENSION_CLASS_DESCRIPTOR = "Lapp/revanced/extension/syncfor
 @Suppress("unused")
 val fixImgurPatch = bytecodePatch(
     name = "Fix Imgur",
-    description = "Resolves Imgur images locally and optionally uses a personal Imgur client ID for albums.",
+    description = "Resolves Imgur images locally and loads albums from Imgur's public embed page, without an API key.",
     use = true,
 ) {
     dependsOn(sharedExtensionPatch)
@@ -24,18 +22,7 @@ val fixImgurPatch = bytecodePatch(
         "com.laurencedawson.reddit_sync.dev",
     )
 
-    val clientId by stringOption(
-        name = "Imgur client ID",
-        default = null,
-        description = "Optional Imgur API client ID for albums. Without it, albums fail cleanly.",
-        required = false,
-    )
-
     apply {
-        val id = clientId?.trim().orEmpty()
-        require(id.all { it.isLetterOrDigit() && it.code < 128 }) { "Invalid Imgur client ID" }
-        imgurClientIdMethod.returnEarly(id)
-
         // These static builders still receive the original URL, including its animation suffix.
         // Replace their bodies so neither the proxy nor its salted MD5 builder is used.
         listOf(singleUrlMethodMatch.method to "singleUrl", albumUrlMethodMatch.method to "albumUrl")
@@ -53,6 +40,25 @@ val fixImgurPatch = bytecodePatch(
                 invoke-static {}, $EXTENSION_CLASS_DESCRIPTOR->albumHeaders()Ljava/util/Map;
                 move-result-object v0
                 return-object v0
+            """)
+        }
+
+        // Albums: the request now fetches imgur.com/a/<id>/embed; turn that page into the API-shaped
+        // JSON the parser below reads. .locals 11, v0-v2 are free at entry; keep the response headers
+        // for Volley's cache. A null result leaves the response alone (parser error -> browser).
+        albumParseMethodMatch.method.apply {
+            check(implementation!!.registerCount - parameters.size - 1 >= 3) { "ImgurGalleryRequest.parseNetworkResponse locals changed" }
+            addInstructionsWithLabels(0, """
+                iget-object v0, p1, Lcom/android/volley/NetworkResponse;->data:[B
+                invoke-static { v0 }, $EXTENSION_CLASS_DESCRIPTOR->albumJson([B)[B
+                move-result-object v0
+                if-eqz v0, :parse
+                iget-object v1, p1, Lcom/android/volley/NetworkResponse;->headers:Ljava/util/Map;
+                new-instance v2, Lcom/android/volley/NetworkResponse;
+                invoke-direct { v2, v0, v1 }, Lcom/android/volley/NetworkResponse;-><init>([BLjava/util/Map;)V
+                move-object p1, v2
+                :parse
+                nop
             """)
         }
 

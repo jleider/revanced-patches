@@ -21,6 +21,7 @@ public final class ExtensionHarness {
     private static void check(boolean ok, String what) { eq(ok, true, what); }
 
     public static void main(String[] args) throws Exception {
+        if (args.length > 0) fixtures = args[0];
         combinedSubreddits();
         otherDiscussions();
         randomSubreddit();
@@ -36,6 +37,29 @@ public final class ExtensionHarness {
         previewSafety();
         System.out.println((failures == 0 ? "PASS" : "FAIL") + ": " + (checks - failures) + "/" + checks + " extension checks");
         if (failures > 0) System.exit(1);
+    }
+
+    static String fixtures = "tests/fixtures";
+
+    static void imgurEmbed() {
+        try {
+            // Real embed page of imgur.com/a/xa2J11z (1 MP4 + 2 JPGs), recorded 2026-11-16.
+            byte[] page = java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(fixtures, "imgur_album_embed.html"));
+            org.json.JSONArray images = new org.json.JSONObject(new String(FixImgurPatch.albumJson(page), "UTF-8"))
+                    .getJSONObject("data").getJSONArray("images");
+            eq(images.length(), 3, "imgur embed: all album images");
+            eq(images.getJSONObject(0).getString("mp4"), "https://i.imgur.com/dTZpJcl.mp4", "imgur embed: animated item plays MP4");
+            eq(images.getJSONObject(1).getString("link"), "https://i.imgur.com/QHMGTpr.jpg", "imgur embed: still image keeps its extension");
+            check(!images.getJSONObject(1).has("mp4"), "imgur embed: still image has no mp4");
+            eq(images.getJSONObject(1).getInt("width"), 3199, "imgur embed: width (parser calls getInt)");
+            check(images.getJSONObject(1).isNull("description"), "imgur embed: null description stays null");
+        } catch (Exception e) {
+            check(false, "imgur embed fixture: " + e);
+        }
+        check(FixImgurPatch.albumJson("<html>no album here</html>".getBytes()) == null, "imgur embed: page without images left alone");
+        check(FixImgurPatch.albumJson("var images = {\"count\":0,\"images\":[]};".getBytes()) == null, "imgur embed: empty album left alone");
+        check(FixImgurPatch.albumJson("images = {\"count\":1,\"images\":[{\"hash\":\"../x\",\"ext\":\".jpg\"}]}".getBytes()) == null, "imgur embed: bad hash dropped");
+        check(FixImgurPatch.albumJson(null) == null, "imgur embed: null body");
     }
 
     static void sLinkGuard() {
@@ -135,9 +159,11 @@ public final class ExtensionHarness {
         String local = FixImgurPatch.localResponse(FixImgurPatch.singleUrl("https://i.imgur.com/AbC123.jpg"));
         check(local != null && local.contains("\"link\":\"https://i.imgur.com/AbC123.jpg\""), "imgur: local image JSON");
         eq(FixImgurPatch.localResponse("https://oauth.reddit.com/hot.json"), null, "imgur: other URLs go to network");
-        check(FixImgurPatch.albumUrl("https://imgur.com/a/funny-cat-pics-AbC12d").endsWith("/AbC12d"), "imgur: album slug URL -> trailing id");
-        check(FixImgurPatch.albumUrl("https://imgur.com/gallery/some-title-XyZ9").endsWith("/XyZ9"), "imgur: gallery slug URL -> trailing id");
-        check(FixImgurPatch.albumUrl("https://imgur.com/a/AbC12d").endsWith("/AbC12d"), "imgur: plain album id");
+        eq(FixImgurPatch.albumUrl("https://imgur.com/a/funny-cat-pics-AbC12d"), "https://imgur.com/a/AbC12d/embed?pub=true", "imgur: album slug URL -> embed page of trailing id");
+        eq(FixImgurPatch.albumUrl("https://imgur.com/gallery/some-title-XyZ9"), "https://imgur.com/a/XyZ9/embed?pub=true", "imgur: gallery slug URL -> embed page");
+        eq(FixImgurPatch.albumUrl("https://imgur.com/a/AbC12d"), "https://imgur.com/a/AbC12d/embed?pub=true", "imgur: plain album id");
+        check(!FixImgurPatch.albumHeaders().containsKey("Authorization"), "imgur: no API key sent");
+        imgurEmbed();
         check(FixImgurPatch.singleUrl("https://imgur.com/AbC123?foo=bar#x").endsWith("image/AbC123.jpg"), "imgur: query/fragment ignored");
         eq(FixImgurPatch.localResponse("https://revanced.invalid/imgur/image/..%2Fx.jpg"), "{}", "imgur: path tricks rejected");
     }
