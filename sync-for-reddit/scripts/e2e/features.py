@@ -450,7 +450,8 @@ def youtube_in_app(c):
     log = c.log()
     c.expect("ad-free embed page loaded" in log, "the ad-free embed page was not used")
     removed = sorted(set(re.findall(r"SYNC_YT_AD_REMOVED:(\w+)", log)))
-    print(f"  youtube_in_app: ad fields removed: {removed or 'none (video had no ads)'}")
+    print(f"  youtube_in_app: ad fields removed: {removed or 'none (video had no ads)'}; "
+          f"wait notice {'shown' if 'SYNC_YT_WAIT_NOTICE' in log else 'not shown'}")
 
 
 @scenario

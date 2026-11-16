@@ -62,10 +62,34 @@ public final class YouTubeWebPlayer {
         return true;
     }
 
-    /** Injected first into the embed page (same origin as the player): strip ads, report errors. */
+    /** Shown over the player while YouTube withholds the video after its ads were removed. */
+    static final String WAIT_TEXT = "Ad blocked \u00b7 YouTube delays the video a few seconds\u2026 ";
+    static final String STALL_TEXT = "Waiting for YouTube\u2026 ";
+
+    private static final String WAIT_NOTICE = "var last=-1,since=0,el=null,shown=0;"
+            + "function hide(){if(el)el.hidden=true;}"
+            + "setInterval(function(){var p=document.getElementById('movie_player');if(!p||!A)return;"
+            + "var v=p.querySelector('video');if(!v)return;var st=p.getPlayerState?p.getPlayerState():-1,now=Date.now(),c=v.currentTime;"
+            + "if(st===0||st===2||st===5||p.classList.contains('ad-showing')||c!==last){last=c;since=now;hide();return;}"
+            + "var w=Math.floor((now-since)/1000);if(w<2)return;"
+            + "if(!el){el=document.createElement('div');el.id='sync-yt-wait';el.setAttribute('style','position:absolute!important;left:50%!important;top:calc(50% + 34px)!important;"
+            + "transform:translateX(-50%)!important;z-index:2147483647!important;width:max-content!important;max-width:80%!important;"
+            + "padding:6px 12px!important;border-radius:14px!important;background:rgba(0,0,0,.75)!important;color:#fff!important;"
+            + "font:13px/1.35 Roboto,Arial,sans-serif!important;text-align:center!important;pointer-events:none!important');}"
+            + "if(el.parentNode!==p)p.appendChild(el);"
+            + "el.textContent=(c<0.5?'" + WAIT_TEXT + "':'" + STALL_TEXT + "')+w+'s';el.hidden=false;"
+            + "if(!shown){shown=1;console.log('SYNC_YT_WAIT_NOTICE');}},250);";
+
+    /**
+     * Injected first into the embed page (same origin as the player): strip ads, report errors.
+     * When ads were removed, YouTube's server withholds the video for roughly the length of the
+     * skipped ad (~10 s). A notice with a seconds counter then explains the stalled spinner; it
+     * shows only while the video is not advancing (never when paused, ended or cued) and hides as
+     * soon as playback moves.
+     */
     static final String AD_SCRIPT = "(function(){"
-            + "var K=['adPlacements','playerAds','adSlots','adBreakHeartbeatParams','adBreakParams'];"
-            + "function s(o){try{if(o&&typeof o==='object'){for(var i=0;i<K.length;i++){if(K[i] in o){delete o[K[i]];console.log('SYNC_YT_AD_REMOVED:'+K[i]);}}"
+            + "var K=['adPlacements','playerAds','adSlots','adBreakHeartbeatParams','adBreakParams'],A=0;"
+            + "function s(o){try{if(o&&typeof o==='object'){for(var i=0;i<K.length;i++){if(K[i] in o){delete o[K[i]];A=1;console.log('SYNC_YT_AD_REMOVED:'+K[i]);}}"
             + "if(o.playerResponse)s(o.playerResponse);}}catch(e){}return o;}"
             + "var P=JSON.parse;JSON.parse=function(){return s(P.apply(this,arguments));};"
             + "var R;try{Object.defineProperty(window,'ytInitialPlayerResponse',{configurable:true,"
@@ -78,6 +102,7 @@ public final class YouTubeWebPlayer {
             + "var t=setInterval(function(){var p=document.getElementById('movie_player');"
             + "if(p&&p.addEventListener){clearInterval(t);p.addEventListener('onError',function(e){console.log('" + "SYNC_YT_ERROR:" + "'+e);});"
             + "if(p.playVideo)p.playVideo();}},300);"
+            + WAIT_NOTICE
             + "})();";
 
     /** The embed page URL for the main-document (ad-free) mode. */

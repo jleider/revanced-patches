@@ -297,6 +297,8 @@ public final class ExtensionHarness {
         check(YouTubeWebPlayer.inject("<p>no head</p>").startsWith("<script>"), "youtube ads: injected without <head> too");
         check(YouTubeWebPlayer.embedUrl("K3elJwmxsRA", 90).startsWith("https://www.youtube.com/embed/K3elJwmxsRA?") && YouTubeWebPlayer.embedUrl("K3elJwmxsRA", 90).contains("start=90"), "youtube ads: embed URL");
         check(YouTubeWebPlayer.AD_SCRIPT.contains("/youtubei\\/v1\\/player/") , "youtube ads: player-response regex escaped for JS");
+        check(YouTubeWebPlayer.AD_SCRIPT.contains(YouTubeWebPlayer.WAIT_TEXT) && YouTubeWebPlayer.AD_SCRIPT.contains("SYNC_YT_WAIT_NOTICE"), "youtube ads: wait notice included");
+        check(YouTubeWebPlayer.WAIT_TEXT.indexOf('\'') < 0 && YouTubeWebPlayer.STALL_TEXT.indexOf('\'') < 0, "youtube ads: notice texts safe in a JS string");
     }
 
     static void redgifsInfo() throws Exception {

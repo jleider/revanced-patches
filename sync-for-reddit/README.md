@@ -51,7 +51,7 @@ Patches added or changed in this fork (all enabled by default unless noted):
 | Fix link previews | Builds website and album previews on the device; Sync's preview server is gone. Fetches refuse private/LAN addresses (also on redirects), cap images at 10 MB (counting the actual bytes), and time out after 20 s. |
 | Fix Reddit image URLs | Unescapes `&amp;` in `preview.redd.it` URLs, which Reddit now rejects with 403. |
 | Fix Reddit video playback | Plays Reddit videos through their DASH stream (video and audio); Sync's HLS stream can be refused. |
-| Fix YouTube player | Plays YouTube inside Sync with YouTube's embed player, because current YouTube apps removed the player service Sync used. Videos that can't be embedded open in the YouTube app. |
+| Fix YouTube player | Plays YouTube inside Sync with YouTube's embed player, because current YouTube apps removed the player service Sync used. Videos that can't be embedded open in the YouTube app. "Block YouTube ads" (on by default) removes the embed player's ads; YouTube then holds such videos back for about as long as the ad would have run, and the player shows an "Ad blocked" notice with a seconds counter meanwhile. |
 | Fix Redgifs API (changed) | Also answers Redgifs' removed `/info` endpoint, which broke every Redgifs video with "Error connecting to Redgifs". |
 | Fix combined subreddit feeds | `r/a+b` feeds no longer redirect to the homepage. |
 | Fix other discussions | Finds other posts of the same link through Reddit search. |
