@@ -13,7 +13,7 @@ import com.android.tools.smali.dexlib2.AccessFlags
 @Suppress("unused")
 val enableDebugLoggingPatch = bytecodePatch(
     name = "Enable debug logging",
-    description = "Routes Sync's internal logger to logcat. For development only.",
+    description = "Enables Sync logging and WebView debugging. For development only.",
     use = false,
 ) {
     compatibleWith(
@@ -23,6 +23,14 @@ val enableDebugLoggingPatch = bytecodePatch(
     )
 
     apply {
+        syncApplicationCreateMatch.method.addInstructions(
+            0,
+            """
+                const/4 v0, 0x1
+                invoke-static { v0 }, Landroid/webkit/WebView;->setWebContentsDebuggingEnabled(Z)V
+            """,
+        )
+
         val loggerMethods = syncLoggerMethodMatch.classDef.methods.filter { method ->
             AccessFlags.STATIC.isSet(method.accessFlags) &&
                 method.returnType == "V" &&

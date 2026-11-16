@@ -9,3 +9,9 @@ internal val BytecodePatchContext.syncLoggerMethodMatch by composingFirstMethod 
     instructions("reddit_sync"())
     custom { immutableClassDef.sourceFile == "Logger.java" }
 }
+
+// onCreate is identified by its source file and startup diagnostic, not its class name.
+internal val BytecodePatchContext.syncApplicationCreateMatch by composingFirstMethod {
+    instructions("Startup time first: "())
+    custom { immutableClassDef.sourceFile == "RedditApplication.java" }
+}
