@@ -48,12 +48,12 @@ public final class GfycatHarness {
         check(!FixGfycatPatch.isRedditMp4("http://v.redd.it/x/DASH_480.mp4"), "HTTPS only");
         check(!FixGfycatPatch.isRedditMp4("https://v.redd.it.evil/x.mp4"), "exact Reddit host");
         check(FixGfycatPatch.isRedditMp4("https://v.redd.it/x/DASH_480.mp4?a=1&amp;b=2"), "query supported");
-        check("https://v.redd.it/0hp59oq3mpr81/HLSPlaylist.m3u8".equals(FixGfycatPatch.redditHls("https://v.redd.it/0hp59oq3mpr81/DASH_480.mp4?source=fallback")), "DASH mp4 -> HLS (keeps audio)");
-        check("https://v.redd.it/abc123/HLSPlaylist.m3u8".equals(FixGfycatPatch.redditHls("https://v.redd.it/abc123/CMAF_720.mp4")), "CMAF mp4 -> HLS");
-        check(FixGfycatPatch.redditHls("https://v.redd.it/abc123/HLSPlaylist.m3u8") == null, "HLS link left to Sync");
-        check(FixGfycatPatch.redditHls("https://v.redd.it/abc123") == null, "bare id left to Sync");
-        check(FixGfycatPatch.redditHls("https://v.redd.it/a/b/DASH_480.mp4") == null, "unexpected path depth rejected");
-        check(FixGfycatPatch.redditHls("https://v.redd.it.evil/abc/DASH_480.mp4") == null, "foreign host rejected");
+        check("https://v.redd.it/0hp59oq3mpr81/DASHPlaylist.mpd".equals(FixGfycatPatch.redditStream("https://v.redd.it/0hp59oq3mpr81/DASH_480.mp4?source=fallback")), "DASH mp4 -> DASH playlist (keeps audio)");
+        check("https://v.redd.it/abc123/DASHPlaylist.mpd".equals(FixGfycatPatch.redditStream("https://v.redd.it/abc123/CMAF_720.mp4")), "CMAF mp4 -> DASH playlist");
+        check(FixGfycatPatch.redditStream("https://v.redd.it/abc123/HLSPlaylist.m3u8") == null, "playlist link left to Sync");
+        check(FixGfycatPatch.redditStream("https://v.redd.it/abc123") == null, "bare id left to Sync");
+        check(FixGfycatPatch.redditStream("https://v.redd.it/a/b/DASH_480.mp4") == null, "unexpected path depth rejected");
+        check(FixGfycatPatch.redditStream("https://v.redd.it.evil/abc/DASH_480.mp4") == null, "foreign host rejected");
         JSONObject post = new JSONObject("{\"url\":\"https://gfycat.com/X\",\"preview\":{\"reddit_video_preview\":{\"fallback_url\":\"https://v.redd.it/x/DASH_480.mp4?a=1&amp;b=2\"}}}");
         ContentValues v = values();
         FixGfycatPatch.repairPost(post, v);

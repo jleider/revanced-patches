@@ -34,6 +34,9 @@ public final class ExtensionHarness {
         sLinkGuard();
         redditImageUrls();
         httpsUpgrade();
+        redditVideo();
+        redgifsInfo();
+        youTube();
         previewSafety();
         System.out.println((failures == 0 ? "PASS" : "FAIL") + ": " + (checks - failures) + "/" + checks + " extension checks");
         if (failures > 0) System.exit(1);
@@ -254,6 +257,49 @@ public final class ExtensionHarness {
         @Override public okhttp3.Interceptor.Chain withReadTimeout(int t, java.util.concurrent.TimeUnit u) { return this; }
         @Override public int writeTimeoutMillis() { return 0; }
         @Override public okhttp3.Interceptor.Chain withWriteTimeout(int t, java.util.concurrent.TimeUnit u) { return this; }
+    }
+
+    enum FakeResult { SUCCESS, SERVICE_MISSING, SERVICE_VERSION_UPDATE_REQUIRED, SERVICE_DISABLED, SERVICE_INVALID, NETWORK_ERROR }
+
+    static void youTube() {
+        check(FixYouTubePatch.unavailable(FakeResult.SERVICE_MISSING), "youtube: missing player service handled");
+        check(FixYouTubePatch.unavailable(FakeResult.SERVICE_VERSION_UPDATE_REQUIRED), "youtube: 'update required' handled (current YouTube has no service)");
+        check(!FixYouTubePatch.unavailable(FakeResult.NETWORK_ERROR), "youtube: other errors left to Sync");
+        check(!FixYouTubePatch.unavailable(FakeResult.SERVICE_DISABLED), "youtube: Sync's own SERVICE_DISABLED path unchanged");
+        check(!FixYouTubePatch.unavailable(null), "youtube: null");
+        eq(YouTubeWebPlayer.videoId("https://www.youtube.com/watch?v=K3elJwmxsRA"), "K3elJwmxsRA", "youtube: watch URL");
+        eq(YouTubeWebPlayer.videoId("https://youtu.be/K3elJwmxsRA?t=42"), "K3elJwmxsRA", "youtube: youtu.be");
+        eq(YouTubeWebPlayer.videoId("https://m.youtube.com/watch?feature=share&amp;v=K3elJwmxsRA"), "K3elJwmxsRA", "youtube: v not first, escaped &");
+        eq(YouTubeWebPlayer.videoId("https://www.youtube.com/shorts/K3elJwmxsRA"), "K3elJwmxsRA", "youtube: shorts");
+        eq(YouTubeWebPlayer.videoId("https://www.youtube.com/live/K3elJwmxsRA?si=x"), "K3elJwmxsRA", "youtube: live");
+        eq(YouTubeWebPlayer.videoId("https://www.youtube.com/channel/UCxyz"), null, "youtube: channel is not a video");
+        eq(YouTubeWebPlayer.videoId("https://evil.example/watch?v=K3elJwmxsRA"), null, "youtube: other hosts");
+        eq(YouTubeWebPlayer.startSeconds("https://youtu.be/x?t=90"), 90, "youtube: t=90");
+        eq(YouTubeWebPlayer.startSeconds("https://www.youtube.com/watch?v=x&t=1m30s"), 90, "youtube: t=1m30s");
+        eq(YouTubeWebPlayer.startSeconds("https://www.youtube.com/watch?v=x&t=1h2m3s"), 3723, "youtube: t=1h2m3s");
+        eq(YouTubeWebPlayer.startSeconds("https://www.youtube.com/watch?v=x"), 0, "youtube: no start");
+        String page = YouTubeWebPlayer.html("K3elJwmxsRA", 90);
+        check(page.contains("videoId:'K3elJwmxsRA'") && page.contains("start:90") && page.contains("origin:'https://www.reddit.com'"), "youtube: embed page carries id, start and origin");
+    }
+
+    static void redgifsInfo() throws Exception {
+        okhttp3.Response r = RedgifsInfo.emulate(new okhttp3.Request.Builder().url("https://api.redgifs.com/info").build());
+        check(r != null && r.code() == 200, "redgifs: /info answered locally");
+        eq(new org.json.JSONObject(r.body().string()).getString("remote-addr"), "", "redgifs: GrabIpRequest's remote-addr field present");
+        check(RedgifsInfo.emulate(new okhttp3.Request.Builder().url("https://api.redgifs.com/v2/gifs/x").build()) == null, "redgifs: other API calls go to Redgifs");
+        check(RedgifsInfo.emulate(new okhttp3.Request.Builder().url("https://evil.example/info").build()) == null, "redgifs: other hosts untouched");
+    }
+
+    static void redditVideo() {
+        String dash = "https://v.redd.it/8yhty8ueyz1i1/DASHPlaylist.mpd";
+        eq(FixRedditVideoPatch.videoSource("https://v.redd.it/8yhty8ueyz1i1/HLSPlaylist.m3u8"), dash, "video: HLS playlist -> DASH");
+        eq(FixRedditVideoPatch.videoSource("https://v.redd.it/8yhty8ueyz1i1/HLSPlaylist.m3u8?a=1797440617%2CMzE&amp;v=1&f=sd"), dash, "video: signed hls_url -> DASH");
+        eq(FixRedditVideoPatch.videoSource("https://v.redd.it/8yhty8ueyz1i1/CMAF_1080.mp4?source=fallback"), dash, "video: direct MP4 -> DASH (audio)");
+        eq(FixRedditVideoPatch.videoSource(dash), dash, "video: DASH stays DASH");
+        eq(FixRedditVideoPatch.videoSource("https://i.imgur.com/a.mp4"), "https://i.imgur.com/a.mp4", "video: other hosts untouched");
+        eq(FixRedditVideoPatch.videoSource("https://v.redd.it.evil/x/HLSPlaylist.m3u8"), "https://v.redd.it.evil/x/HLSPlaylist.m3u8", "video: lookalike host untouched");
+        eq(FixRedditVideoPatch.videoSource("https://v.redd.it/a/b/HLSPlaylist.m3u8"), "https://v.redd.it/a/b/HLSPlaylist.m3u8", "video: unexpected path untouched");
+        eq(FixRedditVideoPatch.videoSource(null), null, "video: null");
     }
 
     static void httpsUpgrade() throws Exception {

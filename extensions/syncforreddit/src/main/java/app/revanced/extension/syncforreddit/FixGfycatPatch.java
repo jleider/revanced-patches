@@ -25,16 +25,12 @@ public final class FixGfycatPatch {
                 && u.getPath() != null && u.getPath().toLowerCase(Locale.ROOT).endsWith(".mp4");
     }
     /**
-     * Sync's viewer turns v.redd.it links into {@code /<id>/HLSPlaylist.m3u8}, which carries the audio track,
-     * but its id extraction keeps the ".mp4" of direct DASH/CMAF file links and builds a dead URL.
-     * Returns the HLS playlist for a direct v.redd.it MP4 file link, or null for anything else.
+     * Sync's viewer turns v.redd.it links into a stream playlist, but its id extraction keeps the ".mp4"
+     * of direct DASH/CMAF file links and builds a dead URL. Returns the post's DASH playlist (video and
+     * audio; HLS now 403s for many videos) for a direct v.redd.it MP4 file link, or null for anything else.
      */
-    public static String redditHls(String value) {
-        if (!isRedditMp4(value)) return null;
-        String[] parts = uri(value).getPath().split("/");
-        // Expect ["", "<id>", "<DASH_720.mp4>"]
-        if (parts.length != 3 || !parts[1].matches("[A-Za-z0-9]+")) return null;
-        return "https://v.redd.it/" + parts[1] + "/HLSPlaylist.m3u8";
+    public static String redditStream(String value) {
+        return isRedditMp4(value) ? FixRedditVideoPatch.dashFor(value) : null;
     }
     private static String image(String value) {
         URI u = uri(value);
