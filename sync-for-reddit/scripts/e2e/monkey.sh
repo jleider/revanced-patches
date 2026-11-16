@@ -9,7 +9,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"   # sync-for-reddit/
 source "$ROOT/env.sh"
 PKG=com.laurencedawson.reddit_sync
 EVENTS=${1:-5000}; SEED=${2:-4242}
-HOSTS=$(mktemp -t sync-monkey-hosts)
+HOSTS=$(mktemp "${TMPDIR:-/tmp}/sync-monkey-hosts.XXXXXX")
 "$ROOT/scripts/e2e/netcap.sh" start "$HOSTS" >/dev/null
 # Monkey taps through Settings at random; put the baseline back afterwards so later suites are stable.
 "$ROOT/scripts/e2e/app_state.sh" restore >/dev/null 2>&1

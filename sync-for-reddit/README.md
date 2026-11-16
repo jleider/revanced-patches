@@ -48,7 +48,7 @@ Patches added or changed in this fork (all enabled by default unless noted):
 | Fix login redirect | Login no longer lands on the Reddit homepage. |
 | Fix Imgur | Builds direct image links locally; albums load from Imgur's public embed page. No API key. |
 | Fix Gfycat | Plays Reddit's archived copies of Gfycat videos (with audio), fails fast when none exists. |
-| Fix link previews | Builds website and album previews on the device; Sync's preview server is gone. Fetches refuse private/LAN addresses and are size- and time-limited. |
+| Fix link previews | Builds website and album previews on the device; Sync's preview server is gone. Fetches refuse private/LAN addresses (also on redirects), cap images at 10 MB (counting the actual bytes), and time out after 20 s. |
 | Fix Reddit image URLs | Unescapes `&amp;` in `preview.redd.it` URLs, which Reddit now rejects with 403. |
 | Fix combined subreddit feeds | `r/a+b` feeds no longer redirect to the homepage. |
 | Fix other discussions | Finds other posts of the same link through Reddit search. |
@@ -66,18 +66,19 @@ Known limitations: Tumblr embeds (revoked API key), Pushshift-based features, an
 
 Everything below runs from this folder; all paths are relative to it.
 
-1. JDK 17, the Android SDK (build-tools, platform-tools, emulator, an Android 14 `google_apis` arm64/x86_64
-   system image), Python 3, and the GitHub CLI logged in with `read:packages` (the ReVanced Gradle plugin
-   comes from GitHub Packages: `gh auth refresh -h github.com -s read:packages`).
-2. Local files (gitignored):
-   - `apk/sync-23.06.30.apk`: your copy of the app (checksum above).
-   - `tools/revanced-cli-6.0.0-all.jar`: the ReVanced CLI 6.0.0 release jar.
-   - `secrets.env`: copy `secrets.env.example` and fill in your Reddit client ID (`chmod 600`).
-   - `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt` for the e2e tools.
-3. `source env.sh` (finds JDK 17 and the SDK, or uses `JAVA_HOME` / `ANDROID_HOME`).
-4. An emulator named `sync34` (Android 14, rootable `google_apis` image) for the on-device gates:
-   `emulator -avd sync34 -no-window -no-audio -no-snapshot-save &`. After the first install, run
-   `scripts/e2e/app_state.sh fresh` once to record a clean app state (Crashlytics off).
+1. Install JDK 17, the Android SDK (build-tools, platform-tools, emulator and an Android 14 `google_apis`
+   arm64/x86_64 system image), Python 3.12 or newer, [apktool](https://apktool.org), and optionally
+   [jadx](https://github.com/skylot/jadx). The GitHub CLI must be logged in with `read:packages`, because the
+   ReVanced Gradle plugin comes from GitHub Packages: `gh auth refresh -h github.com -s read:packages`.
+2. Put your copy of the app at `apk/sync-23.06.30.apk` (checksum above) and the ReVanced CLI 6.0.0 release
+   jar at `tools/revanced-cli-6.0.0-all.jar`. Both folders are gitignored.
+3. Run `scripts/setup.sh`. It checks the toolchain and creates `secrets.env` from `secrets.env.example`, where
+   you fill in your Reddit client ID. It also sets up the Python venv and decompiles the app into
+   `decompiled/`: smali with apktool, and readable Java if jadx is installed.
+4. `source env.sh` in every shell. It finds JDK 17 and the SDK, or uses `JAVA_HOME` / `ANDROID_HOME`.
+5. For the on-device gates, create an emulator named `sync34` (Android 14, rootable `google_apis` image) and
+   start it with `emulator -avd sync34 -no-window -no-audio -no-snapshot-save &`. After the first install,
+   run `scripts/e2e/app_state.sh fresh` once to record a clean app state (Crashlytics off).
 
 Then, after every change:
 

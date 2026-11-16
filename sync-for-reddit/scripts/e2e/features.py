@@ -13,6 +13,7 @@ Fixture posts live in tests/fixtures/e2e_posts.json.
 import json
 import re
 import subprocess
+import tempfile
 import sys
 import time
 from pathlib import Path
@@ -24,7 +25,7 @@ PKG = D.PKG
 ROOT = D.ROOT
 POSTS = json.loads((ROOT / "tests/fixtures/e2e_posts.json").read_text())
 NETCAP = str(ROOT / "scripts/e2e/netcap.sh")
-HOSTLOG = Path(subprocess.check_output(["mktemp", "-t", "sync-hosts"], text=True).strip())
+HOSTLOG = Path(tempfile.mkstemp(prefix="sync-hosts.")[1])   # portable (BSD and GNU)
 DEAD_HOSTS = ["gfycat.com", "ap.syncforreddit.com", "images.syncforreddit.com", "revanced.invalid",
               # app-measurement.com is left out: the capture is device-wide and Google Play services
               # uploads other apps' analytics there. The telemetry scenario checks Sync's own state.
@@ -346,10 +347,13 @@ def load_more_comments(c):
     c.open(f"https://www.reddit.com/comments/{thread}")
     c.expect_ui(resourceId=PKG + ":id/comment_row_content")
     permalink = r"oauth\.reddit\.com/comments/[a-z0-9]+(/_/[a-z0-9]+)?\?limit=500&depth=\d+"
+    rows = lambda: {e.get_text() for e in c.d(resourceId=PKG + ":id/comment_row_content") if e.get_text()}
+    clicked = None
     for _ in range(30):
         more = c.d(textMatches=r"View more \(\d+\)")
         if more.exists:
-            before = c.d(resourceId=PKG + ":id/comment_row_content").count
+            clicked = (more.get_text(), more.info["bounds"])
+            before = rows()
             more.click()
             time.sleep(5)
             break
@@ -361,6 +365,13 @@ def load_more_comments(c):
     c.expect_no_url(r"api/morechildren", "load more still uses blocked morechildren")
     requests = [u for u in c.urls() if re.search(permalink, u)]
     c.expect(len(requests) <= 6, f"load more fired {len(requests)} requests (chaining?)")
+    if clicked:
+        # The request alone proves nothing: if the response could not be parsed, Sync keeps the old
+        # row. The tapped row must be replaced and comments not on screen before must appear.
+        text, bounds = clicked
+        still = [e for e in c.d(text=text) if e.info["bounds"] == bounds]
+        c.expect(not still, f"'{text}' row is still there: the loaded comments were not inserted")
+        c.expect(rows() - before, "no new comments appeared after load more")
 
 
 @scenario

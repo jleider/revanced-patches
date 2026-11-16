@@ -17,6 +17,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # sync-for-reddit/
 source "$ROOT/env.sh"
 cd "$ROOT"
+# Prerequisites (scripts/setup.sh creates the local ones).
+for need in apk/sync-23.06.30.apk tools/revanced-cli-6.0.0-all.jar secrets.env decompiled/sync-23.06.30-smali; do
+  [ -e "$need" ] || { echo "FAIL: missing $need (see README, then run scripts/setup.sh)"; exit 1; }
+done
+command -v apktool >/dev/null || { echo "FAIL: apktool not on PATH (scripts/setup.sh)"; exit 1; }
 source secrets.env
 
 # Serialize runs: concurrent builds share out/ and corrupt each other's APKs.
@@ -39,7 +44,6 @@ trap 'rm -rf "$LOCK"' EXIT
 DEBUG=0; BUILD=1; INSTALL=1
 for a in "$@"; do case $a in --debug) DEBUG=1;; --no-build) BUILD=0;; --no-install) INSTALL=0;; esac; done
 
-RVP=$(ls "$SYNC_REPO"/patches/build/libs/patches-*.rvp 2>/dev/null | grep -v -e sources -e javadoc | head -1)
 OUT=out/sync-patched$([ $DEBUG = 1 ] && echo -debug || true).apk
 LOG=out/patch.log
 mkdir -p out
@@ -55,6 +59,9 @@ if [ $BUILD = 1 ]; then
     ORG_GRADLE_PROJECT_githubPackagesPassword=$(gh auth token) \
     ./gradlew :patches:build -x test -q ) || { echo "FAIL: gradle build"; exit 1; }
 fi
+# Find the bundle after building (the version comes from gradle.properties): newest bundle, never sources/javadoc.
+RVP=$(ls "$SYNC_REPO"/patches/build/libs/patches-*.rvp 2>/dev/null | grep -v -e sources -e javadoc | sort -V | tail -1 || true)
+[ -n "$RVP" ] || { echo "FAIL: no patches-*.rvp in patches/build/libs (build first)"; exit 1; }
 
 # Patches we expect to apply. Keep in sync with what we ship.
 EXPECTED_PATCHES=(

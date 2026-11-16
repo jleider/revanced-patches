@@ -35,10 +35,14 @@ echo "== install $REF"
 adb install -r "$APK" >/dev/null
 fail=0
 for s in "$@"; do
+  # Only a scenario assertion failure ("FAIL <scenario>: ...") counts as detecting the regression.
+  # Setup problems (unknown scenario, no network, adb/state errors, crashes in the harness) are inconclusive.
   if "$ROOT/scripts/e2e/features.sh" "$s" > "out/negctl/$s.log" 2>&1; then
     echo "FAIL $s passed on $REF: the scenario does not detect the regression"; fail=1
+  elif grep -q "^FAIL $s: " "out/negctl/$s.log" && ! grep -qE "^Traceback|unknown scenario|^FAIL: " "out/negctl/$s.log"; then
+    echo "ok   $s fails on $REF: $(grep -m1 "^FAIL $s: " "out/negctl/$s.log" | cut -c1-160)"
   else
-    echo "ok   $s fails on $REF: $(grep -m1 '^FAIL' "out/negctl/$s.log" | cut -c1-160)"
+    echo "FAIL $s inconclusive on $REF (setup error, see out/negctl/$s.log): $(grep -m1 -E 'FAIL|Error|Traceback|unknown' "out/negctl/$s.log" | cut -c1-160)"; fail=1
   fi
 done
 [ $fail = 0 ] && echo "PASS: every scenario caught $REF"
