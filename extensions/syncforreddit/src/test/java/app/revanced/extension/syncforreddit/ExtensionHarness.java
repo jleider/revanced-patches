@@ -1,0 +1,228 @@
+package app.revanced.extension.syncforreddit;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+/**
+ * Offline unit checks for the extension helpers that rewrite Reddit/media URLs and adapt responses.
+ * Run by scripts/unit_tests.sh (plain javac + org.json + android.jar + the JVM stubs in this tree).
+ */
+public final class ExtensionHarness {
+    private static int checks, failures;
+
+    private static void eq(Object got, Object want, String what) {
+        checks++;
+        if (want == null ? got != null : !want.equals(got)) {
+            failures++;
+            System.out.println("FAIL " + what + "\n     got:  " + got + "\n     want: " + want);
+        }
+    }
+
+    private static void check(boolean ok, String what) { eq(ok, true, what); }
+
+    public static void main(String[] args) throws Exception {
+        combinedSubreddits();
+        otherDiscussions();
+        randomSubreddit();
+        gallery();
+        imgur();
+        linkPreviews();
+        loginRedirect();
+        previewInterceptor();
+        gfycatBlock();
+        System.out.println((failures == 0 ? "PASS" : "FAIL") + ": " + (checks - failures) + "/" + checks + " extension checks");
+        if (failures > 0) System.exit(1);
+    }
+
+    static void combinedSubreddits() {
+        String o = "https://oauth.reddit.com/";
+        eq(FixCombinedSubredditsPatch.fixUrl(o + "r/pics+funny/hot.json?limit=25&after=t3_x"), o + "r/pics%2Bfunny/hot.json?limit=25&after=t3_x", "multisub: listing");
+        eq(FixCombinedSubredditsPatch.fixUrl(o + "r/a+b/search.json?q=cute+cat&restrict_sr=on"), o + "r/a%2Bb/search.json?q=cute+cat&restrict_sr=on", "multisub: '+' in query untouched");
+        eq(FixCombinedSubredditsPatch.fixUrl(o + "search.json?q=a+b"), o + "search.json?q=a+b", "multisub: global search untouched");
+        eq(FixCombinedSubredditsPatch.fixUrl(o + "r/pics/hot.json"), o + "r/pics/hot.json", "multisub: single sub untouched");
+        eq(FixCombinedSubredditsPatch.fixUrl("https://example.com/r/a+b"), "https://example.com/r/a+b", "multisub: non-reddit host untouched");
+        eq(FixCombinedSubredditsPatch.fixUrl(o + "r/a+b"), o + "r/a%2Bb", "multisub: no query");
+        eq(FixCombinedSubredditsPatch.fixUrl(o + "r/a+b#frag"), o + "r/a%2Bb#frag", "multisub: fragment kept");
+        eq(FixCombinedSubredditsPatch.fixUrl(null), null, "multisub: null");
+        eq(FixCombinedSubredditsPatch.fixUrl("https://ssl.reddit.com/api/v1/access_token"), "https://ssl.reddit.com/api/v1/access_token", "multisub: token endpoint untouched");
+    }
+
+    static void otherDiscussions() {
+        String enc = java.net.URLEncoder.encode("https://www.kyivpost.com/post/89765?a=1&b=2", java.nio.charset.StandardCharsets.UTF_8);
+        String out = FixOtherDiscussionsPatch.rewriteUrl("https://ssl.reddit.com/submit.json?url=" + enc);
+        check(out.startsWith("https://oauth.reddit.com/search.json?q="), "dupes: rewritten to OAuth search");
+        eq(java.net.URLDecoder.decode(out.split("q=")[1].split("&")[0], java.nio.charset.StandardCharsets.UTF_8),
+                "url:https://www.kyivpost.com/post/89765?a=1&b=2", "dupes: link decoded once and re-encoded as one q value");
+        String paged = FixOtherDiscussionsPatch.rewriteUrl("https://ssl.reddit.com/submit.json?url=" + enc + "&after=t3_abc12&limit=25");
+        check(paged.contains("&after=t3_abc12"), "dupes: pagination kept");
+        check(!paged.contains("limit=25&limit"), "dupes: no duplicate limit");
+        check(FixOtherDiscussionsPatch.rewriteUrl("https://www.reddit.com/submit.json?url=" + enc).startsWith("https://oauth.reddit.com/search.json?q="),
+                "dupes: runtime www form (after Spoof client's ssl->www rewrite)");
+        eq(FixOtherDiscussionsPatch.rewriteUrl("https://evilreddit.com/submit.json?url=x"), "https://evilreddit.com/submit.json?url=x", "dupes: lookalike host untouched");
+        eq(FixOtherDiscussionsPatch.rewriteUrl("https://oauth.reddit.com/r/pics/hot.json"), "https://oauth.reddit.com/r/pics/hot.json", "dupes: unrelated URL untouched");
+        String junk = FixOtherDiscussionsPatch.rewriteUrl("https://ssl.reddit.com/submit.json?url=x&after=javascript:alert(1)");
+        check(!junk.contains("javascript"), "dupes: malformed after dropped");
+    }
+
+    static void randomSubreddit() throws Exception {
+        String sfw = FixRandomSubredditPatch.rewriteUrl("https://oauth.reddit.com/r/random.json");
+        String nsfw = FixRandomSubredditPatch.rewriteUrl("https://oauth.reddit.com/r/randnsfw.json");
+        check(sfw.contains("/subreddits/popular.json") && sfw.contains("revanced_random=sfw"), "random: sfw URL");
+        check(nsfw.contains("include_over_18=on") && nsfw.contains("revanced_random=nsfw"), "random: nsfw URL");
+        eq(FixRandomSubredditPatch.rewriteUrl("https://oauth.reddit.com/r/randomthoughts/hot.json"), "https://oauth.reddit.com/r/randomthoughts/hot.json", "random: r/randomthoughts untouched");
+        eq(FixRandomSubredditPatch.rewriteUrl("https://oauth.reddit.com/r/random/hot.json"), "https://oauth.reddit.com/r/random/hot.json", "random: listing URL untouched");
+        JSONArray children = new JSONArray()
+                .put(sub("pics", false)).put(sub("nsfwsub", true)).put(sub("bad name!", false))
+                .put(new JSONObject().put("data", new JSONObject().put("display_name", "noflag")));
+        String body = new JSONObject().put("data", new JSONObject().put("children", children)).toString();
+        for (int i = 0; i < 20; i++) {
+            String picked = new JSONObject(FixRandomSubredditPatch.convert(body, sfw)).getJSONObject("data")
+                    .getJSONArray("children").getJSONObject(0).getJSONObject("data").getString("subreddit");
+            eq(picked, "pics", "random: sfw picks only over18=false with a valid name");
+            String n = new JSONObject(FixRandomSubredditPatch.convert(body, nsfw)).getJSONObject("data")
+                    .getJSONArray("children").getJSONObject(0).getJSONObject("data").getString("subreddit");
+            eq(n, "nsfwsub", "random: nsfw picks only over18=true");
+        }
+        eq(FixRandomSubredditPatch.convert("{\"x\":1}", "https://oauth.reddit.com/r/pics/hot.json"), "{\"x\":1}", "random: other responses untouched");
+        boolean threw = false;
+        try { FixRandomSubredditPatch.convert("{\"data\":{\"children\":[]}}", sfw); } catch (org.json.JSONException e) { threw = true; }
+        check(threw, "random: empty pool -> JSONException (parser turns it into ParseError)");
+    }
+
+    private static JSONObject sub(String name, boolean over18) throws Exception {
+        return new JSONObject().put("kind", "t5").put("data", new JSONObject().put("display_name", name).put("over18", over18));
+    }
+
+    static void gallery() throws Exception {
+        eq(FixGalleryPatch.rewriteGalleryUrl("https://oauth.reddit.com/api/info.json?id=t3_abc123"),
+                "https://oauth.reddit.com/comments/abc123?limit=1&depth=0", "gallery: info -> comments");
+        eq(FixGalleryPatch.rewriteGalleryUrl("https://oauth.reddit.com/r/pics/hot.json"), "https://oauth.reddit.com/r/pics/hot.json", "gallery: other URL untouched");
+        String listing = "{\"kind\":\"Listing\",\"data\":{\"children\":[]}}";
+        eq(new JSONObject(FixGalleryPatch.unwrapPostListing("[" + listing + ",{\"kind\":\"Listing\"}]")).getString("kind"), "Listing", "gallery: unwrap [post, comments]");
+        eq(FixGalleryPatch.unwrapPostListing(listing), listing, "gallery: object passes through");
+        eq(FixGalleryPatch.unwrapPostListing("<html>"), "<html>", "gallery: garbage passes through");
+    }
+
+    static void imgur() {
+        check(FixImgurPatch.singleUrl("https://imgur.com/AbC123").endsWith("image/AbC123.jpg"), "imgur: page -> jpg");
+        check(FixImgurPatch.singleUrl("https://i.imgur.com/AbC123.gifv").endsWith("image/AbC123.mp4"), "imgur: gifv -> mp4");
+        check(FixImgurPatch.singleUrl("https://i.imgur.com/AbC123.gif?1").endsWith("image/AbC123.mp4"), "imgur: gif with query -> mp4");
+        String local = FixImgurPatch.localResponse(FixImgurPatch.singleUrl("https://i.imgur.com/AbC123.jpg"));
+        check(local != null && local.contains("\"link\":\"https://i.imgur.com/AbC123.jpg\""), "imgur: local image JSON");
+        eq(FixImgurPatch.localResponse("https://oauth.reddit.com/hot.json"), null, "imgur: other URLs go to network");
+        check(FixImgurPatch.albumUrl("https://imgur.com/a/funny-cat-pics-AbC12d").endsWith("/AbC12d"), "imgur: album slug URL -> trailing id");
+        check(FixImgurPatch.albumUrl("https://imgur.com/gallery/some-title-XyZ9").endsWith("/XyZ9"), "imgur: gallery slug URL -> trailing id");
+        check(FixImgurPatch.albumUrl("https://imgur.com/a/AbC12d").endsWith("/AbC12d"), "imgur: plain album id");
+        check(FixImgurPatch.singleUrl("https://imgur.com/AbC123?foo=bar#x").endsWith("image/AbC123.jpg"), "imgur: query/fragment ignored");
+        eq(FixImgurPatch.localResponse("https://revanced.invalid/imgur/image/..%2Fx.jpg"), "{}", "imgur: path tricks rejected");
+    }
+
+    static void linkPreviews() {
+        String html = "<html><head><meta name=\"twitter:image\" content=\"https://i.imgur.com/a.jpg\">"
+                + "<meta data-x=\"1\" property=\"og:image\" content=\"https://i.imgur.com/b.jpg?fb&amp;x=1\"></head>";
+        eq(FixLinkPreviewsPatch.extractImage(html), "https://i.imgur.com/b.jpg?fb&x=1", "preview: og:image preferred, &amp; unescaped");
+        eq(FixLinkPreviewsPatch.extractImage("<meta content='/img/c.png' property='og:image'>"), "/img/c.png", "preview: attribute order and quotes");
+        eq(FixLinkPreviewsPatch.resolve("https://example.com/news/x", "/img/c.png"), "https://example.com/img/c.png", "preview: relative resolved");
+        eq(FixLinkPreviewsPatch.resolve("https://example.com/", "//cdn.example.com/d.jpg"), "https://cdn.example.com/d.jpg", "preview: protocol-relative");
+        eq(FixLinkPreviewsPatch.resolve("https://example.com/", "javascript:alert(1)"), null, "preview: non-http rejected");
+        eq(FixLinkPreviewsPatch.extractImage("<html><head><title>x</title></head>"), null, "preview: none");
+        eq(FixLinkPreviewsPatch.pageFor("imgur-album-AbC12"), "https://imgur.com/a/AbC12", "preview: imgur album key");
+        eq(FixLinkPreviewsPatch.pageFor("imgur-album-../x"), null, "preview: bad album id");
+        eq(FixLinkPreviewsPatch.pageFor("gfycat-Slug"), null, "preview: gfycat key dead");
+        eq(FixLinkPreviewsPatch.pageFor("https://gfycat.com/x"), null, "preview: gfycat page dead");
+        eq(FixLinkPreviewsPatch.pageFor("file:///etc/passwd"), null, "preview: non-http rejected");
+        eq(FixLinkPreviewsPatch.pageFor("https://tenor.com/view/x-1"), "https://tenor.com/view/x-1", "preview: tenor page");
+        // Cache: found entries live 6h, misses 15 min, and failures can be forgotten.
+        FixLinkPreviewsPatch.remember("https://p/1", "https://i/1.jpg", 0);
+        eq(FixLinkPreviewsPatch.cached("https://p/1", 60_000), "https://i/1.jpg", "preview cache: hit");
+        eq(FixLinkPreviewsPatch.cached("https://p/1", 7 * 3600_000L), null, "preview cache: found entry expires");
+        FixLinkPreviewsPatch.remember("https://p/2", null, 0);
+        eq(FixLinkPreviewsPatch.cached("https://p/2", 60_000), "", "preview cache: negative hit");
+        eq(FixLinkPreviewsPatch.cached("https://p/2", 16 * 60_000L), null, "preview cache: miss expires sooner");
+        FixLinkPreviewsPatch.remember("https://p/3", "https://i/3.jpg", 0);
+        FixLinkPreviewsPatch.forget("https://p/3");
+        eq(FixLinkPreviewsPatch.cached("https://p/3", 1), null, "preview cache: forget after failed image");
+    }
+
+    /** Drives the real interceptor with a fake OkHttp chain: every failure must be an IOException. */
+    static void previewInterceptor() throws Exception {
+        String proxy = "https://ap.syncforreddit.com/image?url=";
+        for (String og : new String[]{"http://x.example:99999/a.jpg", "https://foo_bar:1x/a.jpg", "https://ok.example/a.jpg"}) {
+            FakeChain chain = new FakeChain(proxy + "https://site.example/page-" + og.hashCode(),
+                    "<html><head><meta property=\"og:image\" content=\"" + og + "\"></head>", "text/html", 404);
+            String outcome;
+            try {
+                okhttp3.Response r = new FixLinkPreviewsPatch().intercept(chain);
+                outcome = "response " + r.code();
+            } catch (java.io.IOException e) {
+                outcome = "IOException";
+            } catch (RuntimeException e) {
+                outcome = "RuntimeException " + e;
+            }
+            eq(outcome, "IOException", "preview interceptor: og:image " + og + " fails as IOException, never crashes");
+        }
+        // A good page + image returns the image as the answer to the original proxy request.
+        FakeChain ok = new FakeChain(proxy + "https://site.example/good",
+                "<meta property=\"og:image\" content=\"https://cdn.example/i.png\">", "image/png", 200);
+        okhttp3.Response r = new FixLinkPreviewsPatch().intercept(ok);
+        eq(r.code(), 200, "preview interceptor: image served");
+        eq(r.request().url().toString(), proxy + "https://site.example/good", "preview interceptor: bound to the original request");
+        eq(ok.requested, java.util.Arrays.asList("https://site.example/good", "https://cdn.example/i.png"), "preview interceptor: page then image");
+        // Non-proxy requests pass straight through, untouched.
+        FakeChain pass = new FakeChain("https://i.redd.it/x.jpg", "", "image/jpeg", 200);
+        new FixLinkPreviewsPatch().intercept(pass);
+        eq(pass.requested, java.util.Collections.singletonList("https://i.redd.it/x.jpg"), "preview interceptor: other images pass through");
+    }
+
+    static void gfycatBlock() throws Exception {
+        for (String url : new String[]{"https://thumbs.gfycat.com/X-poster.jpg", "https://gfycat.com/favicon.ico"}) {
+            FakeChain chain = new FakeChain(url, "", "image/jpeg", 200);
+            boolean blocked = false;
+            try { new GfycatBlockInterceptor().intercept(chain); } catch (java.io.IOException e) { blocked = true; }
+            check(blocked && chain.requested.isEmpty(), "gfycat block: " + url + " fails locally");
+        }
+        FakeChain ok = new FakeChain("https://i.redd.it/x.jpg", "", "image/jpeg", 200);
+        new GfycatBlockInterceptor().intercept(ok);
+        eq(ok.requested.size(), 1, "gfycat block: other hosts pass");
+        check(!GfycatBlockInterceptor.blocked("notgfycat.com"), "gfycat block: lookalike host passes");
+    }
+
+    /** Minimal OkHttp chain: pages get `html` (status 200), image URLs get an image with `imageStatus`. */
+    static final class FakeChain implements okhttp3.Interceptor.Chain {
+        final okhttp3.Request request;
+        final String html, imageType;
+        final int imageStatus;
+        final java.util.List<String> requested = new java.util.ArrayList<>();
+
+        FakeChain(String url, String html, String imageType, int imageStatus) {
+            this.request = new okhttp3.Request.Builder().url(url).build();
+            this.html = html; this.imageType = imageType; this.imageStatus = imageStatus;
+        }
+        @Override public okhttp3.Request request() { return request; }
+        @Override public okhttp3.Response proceed(okhttp3.Request r) {
+            requested.add(r.url().toString());
+            boolean page = r.url().host().startsWith("site.");
+            return new okhttp3.Response.Builder().request(r).protocol(okhttp3.Protocol.HTTP_1_1)
+                    .code(page ? 200 : imageStatus).message("x")
+                    .header("Content-Type", page ? "text/html" : imageType)
+                    .body(okhttp3.ResponseBody.create(page ? html : "img", okhttp3.MediaType.parse(page ? "text/html" : imageType)))
+                    .build();
+        }
+        @Override public okhttp3.Connection connection() { return null; }
+        @Override public okhttp3.Call call() { return null; }
+        @Override public int connectTimeoutMillis() { return 0; }
+        @Override public okhttp3.Interceptor.Chain withConnectTimeout(int t, java.util.concurrent.TimeUnit u) { return this; }
+        @Override public int readTimeoutMillis() { return 0; }
+        @Override public okhttp3.Interceptor.Chain withReadTimeout(int t, java.util.concurrent.TimeUnit u) { return this; }
+        @Override public int writeTimeoutMillis() { return 0; }
+        @Override public okhttp3.Interceptor.Chain withWriteTimeout(int t, java.util.concurrent.TimeUnit u) { return this; }
+    }
+
+    static void loginRedirect() {
+        check(FixLoginRedirectPatch.isRedditHomepage("https://www.reddit.com/"), "login: homepage");
+        check(FixLoginRedirectPatch.isRedditHomepage("https://reddit.com"), "login: bare host");
+        check(!FixLoginRedirectPatch.isRedditHomepage("https://www.reddit.com/api/v1/authorize?x"), "login: authorize page is not home");
+        check(!FixLoginRedirectPatch.isRedditHomepage("https://evilreddit.com/"), "login: lookalike host");
+        check(!FixLoginRedirectPatch.isRedditHomepage(null), "login: null");
+    }
+}

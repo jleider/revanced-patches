@@ -7,9 +7,20 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/** Adapts a bounded comment permalink listing to Sync's morechildren parser. */
+/**
+ * Adapts comment permalink listings to Sync's morechildren parser (/api/morechildren is blocked).
+ *
+ * Two modes, so one "load more" row costs one request in the common case:
+ *  - batch (a row as Reddit sent it): fetch the parent once (the post for top-level rows,
+ *    /_/<parent comment> otherwise) and return every requested comment found in it;
+ *  - anchored (a row this adapter emitted; its first id carries the {@link #ANCHORED} prefix): the
+ *    remaining comments weren't in the parent's listing, so fetch them one permalink at a time.
+ *    The prefix rides on an existing id so Sync's "load N more" count stays right.
+ * A malformed response is returned unchanged so Sync's own parser fails and keeps the row.
+ */
 public final class FixMoreCommentsPatch {
-    private static final String EMPTY = "{\"json\":{\"data\":{\"things\":[]}}}";
+    /** Prefix on the first child id of rows we emit. Comment ids are [a-z0-9]+, so it can't collide. */
+    static final String ANCHORED = "~";
 
     private FixMoreCommentsPatch() {}
 
@@ -24,9 +35,15 @@ public final class FixMoreCommentsPatch {
         return split < 0 ? "" : encoded.substring(0, split);
     }
 
+    private static boolean anchored(String encoded) {
+        return encoded.substring(encoded.indexOf('|') + 1).trim().startsWith(ANCHORED);
+    }
+
     private static LinkedHashSet<String> ids(String encoded) {
         LinkedHashSet<String> result = new LinkedHashSet<>();
         for (String id : encoded.substring(encoded.indexOf('|') + 1).split(",")) {
+            id = id.trim();
+            if (id.startsWith(ANCHORED)) id = id.substring(ANCHORED.length());
             if (id.matches("[a-z0-9]+")) result.add(id);
         }
         return result;
@@ -34,13 +51,21 @@ public final class FixMoreCommentsPatch {
 
     public static String buildUrl(String post, String encoded, String sort) {
         Set<String> children = ids(encoded);
-        String anchor = children.isEmpty() ? parent(encoded).replace("t1_", "")
-                : children.iterator().next();
-        // A permalink loads a requested root even when the main post listing's
-        // limit would hide it. Remaining sibling roots become another more row.
+        String parent = parent(encoded);
+        String anchor;
+        if (anchored(encoded) && !children.isEmpty()) {
+            anchor = children.iterator().next();
+        } else {
+            // Batch: the parent comment's subtree, or the whole post for top-level rows.
+            anchor = parent.startsWith("t1_") ? parent.substring(3) : "";
+        }
         String url = "https://oauth.reddit.com/comments/" + post;
         if (anchor.matches("[a-z0-9]+")) url += "/_/" + anchor;
-        url += "?limit=500&depth=10&context=0&raw_json=1&always_show_media=1&profile_img=true";
+        // Reddit spends limit=500 on nested replies first. For a top-level batch, depth=3 reaches
+        // ~35% more hidden top-level comments (measured on a 1.3k-comment thread); deeper replies
+        // become ordinary "View more" rows that batch per parent when tapped.
+        int depth = anchor.isEmpty() ? 3 : 10;
+        url += "?limit=500&depth=" + depth + "&context=0&raw_json=1&always_show_media=1&profile_img=true";
         if (sort != null && sort.matches("[A-Za-z_]+")) {
             url += "&sort=" + sort.toLowerCase(Locale.ENGLISH);
         }
@@ -48,14 +73,15 @@ public final class FixMoreCommentsPatch {
     }
 
     public static String convert(String body, Map<String, String> params) {
-        if (params == null) return EMPTY;
+        if (params == null) return body;
         return convertListing(body, params.get("children"));
     }
 
     /** Public for the standalone JVM fixture harness. No Android dependencies. */
     public static String convertListing(String body, String encoded) {
         try {
-            if (encoded == null) return EMPTY;
+            if (encoded == null) return body;
+            boolean anchoredMode = anchored(encoded);
             LinkedHashSet<String> requested = ids(encoded);
             JSONArray listing = new JSONArray(body);
             JSONArray roots = listing.getJSONObject(1).getJSONObject("data").getJSONArray("children");
@@ -63,10 +89,9 @@ public final class FixMoreCommentsPatch {
             Set<String> emitted = new LinkedHashSet<>();
             Set<String> found = new LinkedHashSet<>();
             select(roots, requested, output, emitted, found, 0);
-            // Only the first ID was fetched. Keep other roots for subsequent
-            // requests; skip an unavailable first ID so automatic top-level
-            // loading cannot retry the same deleted/blocked comment forever.
-            if (!requested.isEmpty()) requested.remove(requested.iterator().next());
+            // Anchored mode fetched only the first id: skip it even when it's missing (deleted or
+            // blocked), so automatic top-level loading can't retry the same comment forever.
+            if (anchoredMode && !requested.isEmpty()) requested.remove(requested.iterator().next());
             requested.removeAll(found);
             for (int i = 0; i < output.length(); i++) {
                 JSONObject thing = output.getJSONObject(i);
@@ -75,18 +100,22 @@ public final class FixMoreCommentsPatch {
                 }
             }
             if (!requested.isEmpty() && parent(encoded).matches("t[13]_[a-z0-9]+")) {
+                JSONArray children = new JSONArray();
+                for (String id : requested) children.put(children.length() == 0 ? ANCHORED + id : id);
                 JSONObject data = new JSONObject();
                 data.put("id", "_");
                 data.put("name", "t1__");
                 data.put("parent_id", parent(encoded));
                 data.put("count", requested.size());
-                data.put("children", new JSONArray(requested));
+                data.put("children", children);
                 output.put(new JSONObject().put("kind", "more").put("data", data));
             }
             return new JSONObject().put("json", new JSONObject().put("data",
                     new JSONObject().put("things", output))).toString();
-        } catch (Exception ignored) {
-            return EMPTY;
+        } catch (Exception e) {
+            // Not a comments listing (HTML block page, error JSON, ...): let Sync's parser reject
+            // it so the "load more" row survives for a retry instead of being consumed.
+            return body == null ? "" : body;
         }
     }
 

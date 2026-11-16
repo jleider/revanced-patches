@@ -3,6 +3,9 @@ package app.revanced.patches.reddit.customclients.sync.syncforreddit.fix.gfycat
 import app.revanced.patcher.extensions.*
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.reddit.customclients.sync.syncforreddit.extension.sharedExtensionPatch
+import app.revanced.patches.reddit.customclients.sync.syncforreddit.fix.linkpreview.imageClientMethodMatch
+import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
+import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import app.revanced.util.getReference
 import app.revanced.util.indexOfFirstInstructionOrThrow
 import com.android.tools.smali.dexlib2.Opcode
@@ -27,6 +30,9 @@ val fixGfycatPatch = bytecodePatch(
                 it.getReference<MethodReference>()?.let { r -> r.definingClass == "Ljava/util/ArrayList;" && r.name == "add" } == true
             }
             require(index >= 0)
+            // Tripwires for the register analysis above: fail the patch, don't corrupt registers.
+            check(implementation!!.registerCount - parameters.size == 29) { "PostParserHelper.a locals changed" }
+            check(getInstruction<FiveRegisterInstruction>(index).registerD == 5) { "Post ContentValues no longer in v5" }
             addInstructions(index, "invoke-static { v2, v5 }, $EXT->repairPost(Lorg/json/JSONObject;Landroid/content/ContentValues;)V")
         }
         viewerMatch.method.apply {
@@ -88,7 +94,21 @@ val fixGfycatPatch = bytecodePatch(
                 move-result-object v1
                 invoke-interface { v1, p1, v0 }, Lcom/android/volley/ResponseDelivery;->postError(Lcom/android/volley/Request;Lcom/android/volley/VolleyError;)V
                 return-object p1
-            """, ExternalLabel("network", getInstruction(index)))
+                # Fall through to whatever follows this block (the other RequestQueue hook or
+                # beginRequest). Jumping to beginRequest directly would skip a hook inserted later.
+                :network
+                nop
+            """)
+        }
+        // Glide: fail dead Gfycat posters/favicons locally (see GfycatBlockInterceptor).
+        imageClientMethodMatch.method.apply {
+            val addIndex = indexOfFirstInstructionOrThrow { getReference<MethodReference>()?.name == "addInterceptor" }
+            check(getInstruction(addIndex + 1).opcode == Opcode.MOVE_RESULT_OBJECT)
+            val builder = getInstruction<OneRegisterInstruction>(addIndex + 1).registerA
+            addInstructions(addIndex + 2, """
+                invoke-static { v$builder }, Lapp/revanced/extension/syncforreddit/GfycatBlockInterceptor;->addInterceptor(Lokhttp3/OkHttpClient${'$'}Builder;)Lokhttp3/OkHttpClient${'$'}Builder;
+                move-result-object v$builder
+            """)
         }
     }
 }

@@ -34,9 +34,12 @@ public final class FixLinkPreviewsPatch implements Interceptor {
     private static final String[] KEYS = {
             "og:image:secure_url", "og:image", "og:image:url", "twitter:image", "twitter:image:src"};
 
-    private static final Map<String, String> CACHE = new LinkedHashMap<String, String>(64, 0.75f, true) {
+    // page URL -> preview image URL ("" = page has none) with the time it was looked up.
+    private static final long FOUND_TTL_MS = 6 * 60 * 60 * 1000L;
+    private static final long NONE_TTL_MS = 15 * 60 * 1000L;
+    private static final Map<String, Object[]> CACHE = new LinkedHashMap<String, Object[]>(64, 0.75f, true) {
         @Override
-        protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+        protected boolean removeEldestEntry(Map.Entry<String, Object[]> eldest) {
             return size() > 300;
         }
     };
@@ -48,32 +51,67 @@ public final class FixLinkPreviewsPatch implements Interceptor {
     @Override
     public Response intercept(Chain chain) throws IOException {
         Request request = chain.request();
-        String url = request.url().toString();
-        if (!url.startsWith(PROXY)) return chain.proceed(request);
+        if (!request.url().toString().startsWith(PROXY)) return chain.proceed(request);
+        try {
+            return preview(chain, request);
+        } catch (IOException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            // OkHttp rethrows non-IOExceptions from enqueued calls on its dispatcher thread, which
+            // would kill the app (e.g. OkHttp rejecting an og:image URL that java.net.URI accepted).
+            throw new IOException("Preview failed", e);
+        }
+    }
 
-        String page = pageFor(url.substring(PROXY.length()));
+    static String cached(String page, long now) {
+        synchronized (CACHE) {
+            Object[] entry = CACHE.get(page);
+            if (entry == null) return null;
+            String image = (String) entry[0];
+            long age = now - (Long) entry[1];
+            if (age > (image.isEmpty() ? NONE_TTL_MS : FOUND_TTL_MS)) {
+                CACHE.remove(page);
+                return null;
+            }
+            return image;
+        }
+    }
+
+    static void remember(String page, String image, long now) {
+        synchronized (CACHE) {
+            CACHE.put(page, new Object[]{image == null ? NONE : image, now});
+        }
+    }
+
+    static void forget(String page) {
+        synchronized (CACHE) {
+            CACHE.remove(page);
+        }
+    }
+
+    private Response preview(Chain chain, Request request) throws IOException {
+        String page = pageFor(request.url().toString().substring(PROXY.length()));
         if (page == null) throw new IOException("No preview for this link");
 
-        String image;
-        synchronized (CACHE) {
-            image = CACHE.get(page);
-        }
+        String image = cached(page, System.currentTimeMillis());
         if (image == null) {
-            try {
-                image = findImage(chain, page);
-            } catch (IOException e) {
-                throw e; // network trouble: don't cache, retry on the next bind
-            }
-            synchronized (CACHE) {
-                CACHE.put(page, image == null ? NONE : image);
-            }
+            image = findImage(chain, page); // IOException (transient) propagates uncached
+            remember(page, image, System.currentTimeMillis());
         }
         if (image == null || image.isEmpty()) throw new IOException("No preview image for " + page);
 
-        Response response = chain.proceed(get(image).build());
+        Response response;
+        try {
+            response = chain.proceed(get(image).build());
+        } catch (IOException | RuntimeException e) {
+            forget(page);
+            throw e;
+        }
         String type = response.header("Content-Type", "");
         if (!response.isSuccessful() || !type.toLowerCase(Locale.ROOT).startsWith("image/")) {
             response.close();
+            // e.g. an expired signed og:image URL: look the page up again next time.
+            forget(page);
             throw new IOException("Preview image failed: " + response.code() + " " + type);
         }
         // Glide caches by its own key; hand back the image as the answer to the original request.
@@ -124,6 +162,8 @@ public final class FixLinkPreviewsPatch implements Interceptor {
             if (!type.isEmpty() && !type.contains("html")) return null;
             String html = readPrefix(body.byteStream());
             return resolve(response.request().url().toString(), extractImage(html));
+        } catch (java.net.UnknownServiceException e) {
+            return null; // cleartext http:// blocked by the network security policy: permanent
         } catch (IOException e) {
             throw e;
         } catch (Exception e) {

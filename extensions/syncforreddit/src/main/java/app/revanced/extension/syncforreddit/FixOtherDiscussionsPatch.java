@@ -11,14 +11,19 @@ import java.net.URLEncoder;
  * @noinspection unused
  */
 public final class FixOtherDiscussionsPatch {
-    private static final String PREFIX = "https://ssl.reddit.com/submit.json?url=";
+    // Sync builds https://ssl.reddit.com/...; the upstream Spoof client patch rewrites every
+    // "ssl.reddit.com" string (ours included) to www. Accept any Reddit host.
+    private static final java.util.regex.Pattern PREFIX =
+            java.util.regex.Pattern.compile("^https://(?:[a-z]+\\.)?reddit\\.com/submit\\.json\\?url=");
 
     private FixOtherDiscussionsPatch() {}
 
     public static String rewriteUrl(String url) {
-        if (url == null || !url.startsWith(PREFIX)) return url;
+        if (url == null) return null;
+        java.util.regex.Matcher prefix = PREFIX.matcher(url);
+        if (!prefix.find()) return url;
         try {
-            String rest = url.substring(PREFIX.length());
+            String rest = url.substring(prefix.end());
             String after = null;
             int split = rest.lastIndexOf("&after=");
             if (split >= 0) {

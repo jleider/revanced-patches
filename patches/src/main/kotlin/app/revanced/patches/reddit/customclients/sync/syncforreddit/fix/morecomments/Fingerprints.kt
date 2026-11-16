@@ -19,3 +19,18 @@ internal val BytecodePatchContext.moreCallerMatch by composingFirstMethod {
     instructions(string { contains("Requesting more: ") })
     custom { immutableClassDef.sourceFile == "CommentsPresenterImpl.java" }
 }
+
+// AutoValue_Post's ContentValues serializer: pairs each getter with its column name
+// ("commentMoreIds" -> more-row children, "parent_id" -> parent fullname).
+internal val BytecodePatchContext.postSerializerMatch by composingFirstMethod {
+    instructions(string { this == "commentMoreIds" })
+    custom { immutableClassDef.sourceFile == "AutoValue_Post.java" }
+}
+
+// RedditRequest.getParams(): returns the request's form-parameter map field.
+internal val BytecodePatchContext.requestParamsMatch by composingFirstMethod {
+    name("getParams")
+    returnType("Ljava/util/Map;")
+    parameterTypes()
+    custom { immutableClassDef.sourceFile == "RedditRequest.java" }
+}

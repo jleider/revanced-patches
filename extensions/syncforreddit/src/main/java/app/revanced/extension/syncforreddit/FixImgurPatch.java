@@ -26,6 +26,9 @@ public final class FixImgurPatch {
             if (part.isEmpty() || part.equals("new") || part.equals("all")
                     || part.equals("embed") || part.equals("noscript")
                     || part.equals("horizontal") || part.equals("layout") || part.equals("blog")) continue;
+            // Current share URLs append a title slug: /a/funny-cat-pics-AbC12d, /gallery/title-AbC12d.
+            int dash = part.lastIndexOf('-');
+            if (dash >= 0) part = part.substring(dash + 1);
             Matcher match = ID.matcher(part);
             return match.find() ? match.group(1) : "";
         }

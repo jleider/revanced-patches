@@ -78,7 +78,11 @@ val fixImgurPatch = bytecodePatch(
                 move-result-object v1
                 invoke-interface { v1, p1, v0 }, Lcom/android/volley/ResponseDelivery;->postResponse(Lcom/android/volley/Request;Lcom/android/volley/Response;)V
                 return-object p1
-            """, ExternalLabel("network", getInstruction(index)))
+                # Fall through to whatever follows this block (the other RequestQueue hook or
+                # beginRequest). Jumping to beginRequest directly would skip a hook inserted later.
+                :network
+                nop
+            """)
         }
     }
 }
