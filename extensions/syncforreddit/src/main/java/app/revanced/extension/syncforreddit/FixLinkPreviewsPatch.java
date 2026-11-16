@@ -10,6 +10,15 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import java.net.Inet4Address;
+import java.net.Inet6Address;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
+import okhttp3.Dns;
 import okhttp3.Interceptor;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -21,12 +30,18 @@ import okhttp3.ResponseBody;
  * load https://ap.syncforreddit.com/image?url=&lt;link&gt; through Glide's OkHttp client. That server
  * now answers 401. This interceptor does its job on the device instead: fetch the start of the
  * linked page, read og:image / twitter:image, and return that image. No third-party service.
+ * <p>
+ * The phone now fetches pages a post or comment links to, so the fetches use their own client:
+ * DNS refuses private, loopback, link-local and carrier-NAT addresses (also after redirects), the
+ * call has a time limit, images are size-capped, and http:// is tried over https first (the
+ * Upgrade connections to HTTPS patch, with an http fallback so previews keep working).
  *
  * @noinspection unused
  */
 public final class FixLinkPreviewsPatch implements Interceptor {
     private static final String PROXY = "https://ap.syncforreddit.com/image?url=";
     private static final int MAX_HTML_BYTES = 256 * 1024;
+    private static final long MAX_IMAGE_BYTES = 15L * 1024 * 1024;
     private static final String NONE = "";
     private static final Pattern META = Pattern.compile("<meta\\b[^>]*>", Pattern.CASE_INSENSITIVE);
     private static final Pattern ATTR = Pattern.compile(
@@ -43,6 +58,62 @@ public final class FixLinkPreviewsPatch implements Interceptor {
             return size() > 300;
         }
     };
+
+    /** Refuses addresses on the device's own network: a link must not make the phone probe the LAN. */
+    static final Dns PUBLIC_ONLY_DNS = new Dns() {
+        @Override
+        public List<InetAddress> lookup(String host) throws UnknownHostException {
+            List<InetAddress> allowed = new ArrayList<>();
+            for (InetAddress a : InetAddress.getAllByName(host)) if (!isPrivate(a)) allowed.add(a);
+            if (allowed.isEmpty()) throw new UnknownHostException("Preview blocked: " + host + " is a private address");
+            return allowed;
+        }
+    };
+
+    static boolean isPrivate(InetAddress a) {
+        if (a.isAnyLocalAddress() || a.isLoopbackAddress() || a.isLinkLocalAddress() || a.isSiteLocalAddress()
+                || a.isMulticastAddress()) return true;
+        byte[] b = a.getAddress();
+        if (a instanceof Inet4Address) {
+            int b0 = b[0] & 0xff, b1 = b[1] & 0xff;
+            return b0 == 0 || (b0 == 100 && b1 >= 64 && b1 <= 127)        // 0/8, carrier-grade NAT 100.64/10
+                    || (b0 == 192 && b1 == 0 && (b[2] & 0xff) == 0)       // 192.0.0/24
+                    || (b0 == 198 && (b1 == 18 || b1 == 19)) || b0 >= 240; // benchmarking, reserved
+        }
+        if (a instanceof Inet6Address) {
+            if ((b[0] & 0xfe) == 0xfc) return true;                         // unique local fc00::/7
+            boolean mapped = true;                                          // ::ffff:a.b.c.d
+            for (int i = 0; i < 10; i++) if (b[i] != 0) { mapped = false; break; }
+            if (mapped && (b[10] & 0xff) == 0xff && (b[11] & 0xff) == 0xff) {
+                try {
+                    return isPrivate(InetAddress.getByAddress(new byte[]{b[12], b[13], b[14], b[15]}));
+                } catch (UnknownHostException e) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static volatile OkHttpClient client;
+    /** JVM tests serve responses from their fake chain instead of the network. */
+    static boolean fetchThroughChainForTests;
+
+    private static OkHttpClient client() {
+        if (client == null) {
+            synchronized (FixLinkPreviewsPatch.class) {
+                if (client == null) client = new OkHttpClient.Builder()
+                        .dns(PUBLIC_ONLY_DNS)
+                        .callTimeout(20, TimeUnit.SECONDS)
+                        .build();   // build() also adds the HTTPS upgrade interceptor in the app
+            }
+        }
+        return client;
+    }
+
+    private static Response fetch(Chain chain, Request request) throws IOException {
+        return fetchThroughChainForTests ? chain.proceed(request) : client().newCall(request).execute();
+    }
 
     public static OkHttpClient.Builder addInterceptor(OkHttpClient.Builder builder) {
         return builder.addInterceptor(new FixLinkPreviewsPatch());
@@ -102,12 +173,24 @@ public final class FixLinkPreviewsPatch implements Interceptor {
 
         Response response;
         try {
-            response = chain.proceed(get(image).build());
+            response = fetch(chain, get(image).build());
         } catch (IOException | RuntimeException e) {
             forget(page);
             throw e;
         }
         String type = response.header("Content-Type", "");
+        String length = response.header("Content-Length");
+        if (length != null) {
+            try {
+                if (Long.parseLong(length.trim()) > MAX_IMAGE_BYTES) {
+                    response.close();
+                    remember(page, null, System.currentTimeMillis());
+                    throw new IOException("Preview image too large: " + length + " bytes");
+                }
+            } catch (NumberFormatException ignored) {
+                // no usable length: the call timeout bounds the download
+            }
+        }
         if (!response.isSuccessful() || !type.toLowerCase(Locale.ROOT).startsWith("image/")) {
             response.close();
             // e.g. an expired signed og:image URL: look the page up again next time.
@@ -151,7 +234,7 @@ public final class FixLinkPreviewsPatch implements Interceptor {
 
     /** null = the page has no preview image (cached); IOException = transient failure (not cached). */
     private static String findImage(Chain chain, String page) throws IOException {
-        try (Response response = chain.proceed(get(page)
+        try (Response response = fetch(chain, get(page)
                 .header("Accept", "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5").build())) {
             ResponseBody body = response.body();
             if (response.code() >= 500 || response.code() == 429) throw new IOException("HTTP " + response.code());
@@ -164,6 +247,8 @@ public final class FixLinkPreviewsPatch implements Interceptor {
             return resolve(response.request().url().toString(), extractImage(html));
         } catch (java.net.UnknownServiceException e) {
             return null; // cleartext http:// blocked by the network security policy: permanent
+        } catch (UnknownHostException e) {
+            return null; // includes PUBLIC_ONLY_DNS refusing a private address: permanent
         } catch (IOException e) {
             throw e;
         } catch (Exception e) {

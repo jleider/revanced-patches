@@ -32,6 +32,8 @@ public final class ExtensionHarness {
         gfycatBlock();
         sLinkGuard();
         redditImageUrls();
+        httpsUpgrade();
+        previewSafety();
         System.out.println((failures == 0 ? "PASS" : "FAIL") + ": " + (checks - failures) + "/" + checks + " extension checks");
         if (failures > 0) System.exit(1);
     }
@@ -169,6 +171,7 @@ public final class ExtensionHarness {
 
     /** Drives the real interceptor with a fake OkHttp chain: every failure must be an IOException. */
     static void previewInterceptor() throws Exception {
+        FixLinkPreviewsPatch.fetchThroughChainForTests = true;
         String proxy = "https://ap.syncforreddit.com/image?url=";
         for (String og : new String[]{"http://x.example:99999/a.jpg", "https://foo_bar:1x/a.jpg", "https://ok.example/a.jpg"}) {
             FakeChain chain = new FakeChain(proxy + "https://site.example/page-" + og.hashCode(),
@@ -195,6 +198,110 @@ public final class ExtensionHarness {
         FakeChain pass = new FakeChain("https://i.redd.it/x.jpg", "", "image/jpeg", 200);
         new FixLinkPreviewsPatch().intercept(pass);
         eq(pass.requested, java.util.Collections.singletonList("https://i.redd.it/x.jpg"), "preview interceptor: other images pass through");
+    }
+
+    /** Chain that throws `failure` for https requests and answers http ones; call() is never canceled. */
+    static final class UpgradeChain implements okhttp3.Interceptor.Chain {
+        final okhttp3.Request request; final java.io.IOException failure;
+        final java.util.List<String> requested = new java.util.ArrayList<>();
+        boolean canceled;
+        UpgradeChain(String url, String method, java.io.IOException failure) {
+            okhttp3.Request.Builder b = new okhttp3.Request.Builder().url(url);
+            if ("POST".equals(method)) b.post(okhttp3.RequestBody.create("x", null));
+            this.request = b.build(); this.failure = failure;
+        }
+        @Override public okhttp3.Request request() { return request; }
+        @Override public okhttp3.Response proceed(okhttp3.Request r) throws java.io.IOException {
+            requested.add(r.method() + " " + r.url());
+            if (r.url().isHttps() && failure != null) throw failure;
+            return new okhttp3.Response.Builder().request(r).protocol(okhttp3.Protocol.HTTP_1_1).code(200).message("ok")
+                    .body(okhttp3.ResponseBody.create("", null)).build();
+        }
+        @Override public okhttp3.Connection connection() { return null; }
+        @Override public okhttp3.Call call() {
+            return (okhttp3.Call) java.lang.reflect.Proxy.newProxyInstance(okhttp3.Call.class.getClassLoader(),
+                    new Class<?>[]{okhttp3.Call.class}, (proxy, m, args) -> m.getName().equals("isCanceled") ? canceled : null);
+        }
+        @Override public int connectTimeoutMillis() { return 10000; }
+        @Override public okhttp3.Interceptor.Chain withConnectTimeout(int t, java.util.concurrent.TimeUnit u) { return this; }
+        @Override public int readTimeoutMillis() { return 0; }
+        @Override public okhttp3.Interceptor.Chain withReadTimeout(int t, java.util.concurrent.TimeUnit u) { return this; }
+        @Override public int writeTimeoutMillis() { return 0; }
+        @Override public okhttp3.Interceptor.Chain withWriteTimeout(int t, java.util.concurrent.TimeUnit u) { return this; }
+    }
+
+    static void httpsUpgrade() throws Exception {
+        eq(HttpsUpgradeInterceptor.upgrade("http://i.imgur.com/a.gif?x=1", "i.imgur.com", 80), "https://i.imgur.com/a.gif?x=1", "https: plain upgrade");
+        eq(HttpsUpgradeInterceptor.upgrade("http://example.com:80/a", "example.com", 80), "https://example.com/a", "https: explicit :80 dropped");
+        eq(HttpsUpgradeInterceptor.upgrade("http://example.com", "example.com", 80), "https://example.com", "https: no path");
+        eq(HttpsUpgradeInterceptor.upgrade("http://example.com:8080/a", "example.com", 8080), null, "https: odd port left alone");
+        eq(HttpsUpgradeInterceptor.upgrade("http://192.168.1.10/a", "192.168.1.10", 80), null, "https: IP literal left alone");
+        eq(HttpsUpgradeInterceptor.upgrade("http://printer.local/a", "printer.local", 80), null, "https: .local left alone");
+        eq(HttpsUpgradeInterceptor.upgrade("http://localhost/a", "localhost", 80), null, "https: localhost left alone");
+        eq(HttpsUpgradeInterceptor.upgrade("https://example.com/a", "example.com", 443), null, "https: already https");
+
+        UpgradeChain ok = new UpgradeChain("http://upgrade-ok.example/a.jpg", "GET", null);
+        new HttpsUpgradeInterceptor().intercept(ok);
+        eq(ok.requested, java.util.Collections.singletonList("GET https://upgrade-ok.example/a.jpg"), "https: request goes out over https only");
+
+        UpgradeChain tls = new UpgradeChain("http://no-tls.example/a", "GET", new javax.net.ssl.SSLHandshakeException("bad cert"));
+        new HttpsUpgradeInterceptor().intercept(tls);
+        eq(tls.requested, java.util.Arrays.asList("GET https://no-tls.example/a", "GET http://no-tls.example/a"), "https: TLS failure falls back to http");
+        UpgradeChain again = new UpgradeChain("http://no-tls.example/b", "GET", new javax.net.ssl.SSLHandshakeException("bad cert"));
+        new HttpsUpgradeInterceptor().intercept(again);
+        eq(again.requested, java.util.Collections.singletonList("GET http://no-tls.example/b"), "https: host remembered as http-only");
+
+        UpgradeChain post = new UpgradeChain("http://slow-post.example/a", "POST", new java.net.SocketTimeoutException("read"));
+        boolean threw = false;
+        try { new HttpsUpgradeInterceptor().intercept(post); } catch (java.net.SocketTimeoutException e) { threw = true; }
+        check(threw && post.requested.size() == 1, "https: POST is never re-sent after a timeout");
+        UpgradeChain get = new UpgradeChain("http://slow-get.example/a", "GET", new java.net.SocketTimeoutException("connect"));
+        new HttpsUpgradeInterceptor().intercept(get);
+        eq(get.requested.size(), 2, "https: GET timeout falls back");
+        UpgradeChain dns = new UpgradeChain("http://gone.example/a", "GET", new java.net.UnknownHostException("gone"));
+        threw = false;
+        try { new HttpsUpgradeInterceptor().intercept(dns); } catch (java.net.UnknownHostException e) { threw = true; }
+        check(threw && dns.requested.size() == 1, "https: unknown host is not retried over http");
+        UpgradeChain cancel = new UpgradeChain("http://canceled.example/a", "GET", new java.io.IOException("Canceled"));
+        cancel.canceled = true;
+        threw = false;
+        try { new HttpsUpgradeInterceptor().intercept(cancel); } catch (java.io.IOException e) { threw = true; }
+        check(threw && cancel.requested.size() == 1, "https: canceled call is not retried");
+
+        okhttp3.OkHttpClient.Builder b = new okhttp3.OkHttpClient.Builder();
+        HttpsUpgradeInterceptor.install(b);
+        HttpsUpgradeInterceptor.install(b);
+        eq(b.interceptors().size(), 1, "https: install is idempotent (newBuilder() copies)");
+    }
+
+    static void previewSafety() throws Exception {
+        String[] priv = {"127.0.0.1", "10.0.0.5", "172.16.3.4", "192.168.1.1", "169.254.169.254", "100.64.0.1",
+                "0.0.0.0", "224.0.0.1", "::1", "fe80::1", "fd00::1", "::ffff:192.168.1.1", "255.255.255.255"};
+        for (String ip : priv)
+            check(FixLinkPreviewsPatch.isPrivate(java.net.InetAddress.getByName(ip)), "preview dns: " + ip + " is private");
+        for (String ip : new String[]{"151.101.1.140", "8.8.8.8", "2a04:4e42::396", "100.128.0.1"})
+            check(!FixLinkPreviewsPatch.isPrivate(java.net.InetAddress.getByName(ip)), "preview dns: " + ip + " is public");
+        boolean blocked = false;
+        try { FixLinkPreviewsPatch.PUBLIC_ONLY_DNS.lookup("localhost"); } catch (java.net.UnknownHostException e) { blocked = true; }
+        check(blocked, "preview dns: localhost refused");
+        blocked = false;
+        try { FixLinkPreviewsPatch.PUBLIC_ONLY_DNS.lookup("127.0.0.1"); } catch (java.net.UnknownHostException e) { blocked = true; }
+        check(blocked, "preview dns: IP literal on loopback refused");
+
+        // Oversized preview image (Content-Length) fails and is remembered as "no preview".
+        FixLinkPreviewsPatch.fetchThroughChainForTests = true;
+        String proxy = "https://ap.syncforreddit.com/image?url=";
+        okhttp3.Interceptor.Chain big = new FakeChain(proxy + "https://site.example/huge",
+                "<meta property=\"og:image\" content=\"https://cdn.example/huge.png\">", "image/png", 200) {
+            @Override public okhttp3.Response proceed(okhttp3.Request r) {
+                okhttp3.Response res = super.proceed(r);
+                return r.url().host().startsWith("site.") ? res : res.newBuilder().header("Content-Length", "99999999").build();
+            }
+        };
+        boolean failed = false;
+        try { new FixLinkPreviewsPatch().intercept(big); } catch (java.io.IOException e) { failed = e.getMessage().contains("too large"); }
+        check(failed, "preview: image over the size cap is refused");
+        eq(FixLinkPreviewsPatch.cached("https://site.example/huge", System.currentTimeMillis()), "", "preview: oversized image cached as no preview");
     }
 
     static void redditImageUrls() throws Exception {
@@ -227,7 +334,7 @@ public final class ExtensionHarness {
     }
 
     /** Minimal OkHttp chain: pages get `html` (status 200), image URLs get an image with `imageStatus`. */
-    static final class FakeChain implements okhttp3.Interceptor.Chain {
+    static class FakeChain implements okhttp3.Interceptor.Chain {
         final okhttp3.Request request;
         final String html, imageType;
         final int imageStatus;
