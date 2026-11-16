@@ -1,6 +1,8 @@
 package app.revanced.patches.reddit.customclients.sync.syncforreddit.misc.telemetry
 
+import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patcher.patch.resourcePatch
+import app.revanced.util.returnEarly
 import org.w3c.dom.Element
 
 /**
@@ -8,6 +10,7 @@ import org.w3c.dom.Element
  * exception handler regardless of the in-app "Crashlytics" toggle (that toggle only gates Sync's
  * manual log calls), and Firebase Analytics is always on. These manifest flags are read by the
  * Firebase SDKs at startup (DataCollectionArbiter, measurement zzag) and stop all collection.
+ * The "hmmm" Firebase callable (username, country, purchase token, installer) is cut at its sender.
  */
 private val FLAGS = mapOf(
     "firebase_crashlytics_collection_enabled" to "false",
@@ -17,11 +20,19 @@ private val FLAGS = mapOf(
     "google_analytics_default_allow_ad_personalization_signals" to "false",
 )
 
+private val disablePiracyReportPatch = bytecodePatch {
+    apply {
+        reportSuspectedPiracyMethodMatch.method.returnEarly()
+    }
+}
+
 @Suppress("unused")
 val disableTelemetryPatch = resourcePatch(
     name = "Disable telemetry",
     description = "Stops Crashlytics crash reports and Firebase Analytics from reaching the original developer's Firebase project.",
 ) {
+    dependsOn(disablePiracyReportPatch)
+
     compatibleWith(
         "com.laurencedawson.reddit_sync",
         "com.laurencedawson.reddit_sync.pro",
