@@ -1,6 +1,7 @@
 """Native selectors via uiautomator2; Sync's debug WebView via Playwright CDP."""
 from contextlib import contextmanager
 import os
+import functools
 from pathlib import Path
 import re
 import subprocess
@@ -14,8 +15,24 @@ ROOT = Path(__file__).resolve().parents[2]   # sync-for-reddit/
 SHOTS = Path(os.environ.get('SHOTS', str(Path(os.environ.get('TMPDIR', '/tmp')) / 'sync-shots')))
 
 
+@functools.lru_cache(maxsize=None)
+def _require_emulator(serial):
+    if not re.fullmatch(r'emulator-\d+', serial):
+        raise RuntimeError('ANDROID_SERIAL must explicitly select an emulator')
+    for prop in ('ro.kernel.qemu', 'ro.boot.qemu'):
+        result = subprocess.run(['adb', '-s', serial, 'shell', 'getprop', prop],
+                                capture_output=True, text=True, check=True)
+        if result.stdout.strip() == '1':
+            return serial
+    raise RuntimeError('selected device is not an emulator')
+
+
+def require_emulator():
+    return _require_emulator(os.environ.get('ANDROID_SERIAL', ''))
+
+
 def connect():
-    return u2.connect(os.environ.get('ANDROID_SERIAL', 'emulator-5554'))
+    return u2.connect(require_emulator())
 
 
 def wait(d, timeout=20, **selector):

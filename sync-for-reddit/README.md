@@ -98,3 +98,23 @@ the reverse-engineering notes (class map, Reddit API state, gotchas).
 
 GPLv3, like ReVanced Patches. Sync for Reddit is © its developer; this project ships patches only, never the
 app or a patched APK.
+
+### Parallel feature tests
+
+Use the existing debug APK and saved app-state baseline. The pool owns separate headless,
+read-only `sync34` instances; it never adopts an already running emulator. The SDK may require
+all instances of this AVD to have been started with `-read-only`.
+
+```bash
+source env.sh
+SYNC_EMULATORS=2 scripts/e2e/emulators.sh up
+SYNC_EMULATORS=2 scripts/e2e/features.sh
+# Or select scenarios:
+SYNC_EMULATORS=2 scripts/e2e/features.sh combined_subreddits search_plus_in_query user_profile
+scripts/e2e/emulators.sh down
+```
+
+Omit `SYNC_EMULATORS` for automatic hardware sizing (up to four instances). The pool stays
+running until `down`; logs and screenshots are under `out/emulators/`. To run on one explicitly
+selected emulator, unset `SYNC_EMULATORS` and set `ANDROID_SERIAL=emulator-NNNN`.
+See `CLAUDE.md` for verification stages, caches, device guards and timing output.

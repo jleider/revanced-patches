@@ -48,20 +48,37 @@ OUT=out/sync-patched$([ $DEBUG = 1 ] && echo -debug || true).apk
 LOG=out/patch.log
 mkdir -p out
 
-echo "== unit"
-"$ROOT/scripts/unit_tests.sh" >out/unit.log 2>&1 && grep -E "^PASS" out/unit.log | sed 's/^/  /' \
-  || { echo "FAIL: unit tests (see out/unit.log)"; grep -E "FAIL|Exception|error" out/unit.log | head -10; exit 1; }
-
-if [ $BUILD = 1 ]; then
+timed() {
+  local label=$1 start=$SECONDS rc=0; shift
+  "$@" || rc=$?
+  echo "TIME $label: $((SECONDS - start))s"
+  return "$rc"
+}
+unit() {
+  echo "== unit"
+  "$ROOT/scripts/unit_tests.sh" >out/unit.log 2>&1 && grep -E "^PASS" out/unit.log | sed 's/^/  /' \
+    || { echo "FAIL: unit tests (see out/unit.log)"; grep -E "FAIL|Exception|error" out/unit.log | head -10; return 1; }
+}
+build() {
+  [ $BUILD = 1 ] || return 0
   echo "== build"
   ( cd "$SYNC_REPO" && \
     ORG_GRADLE_PROJECT_githubPackagesUsername=$(gh api user -q .login) \
     ORG_GRADLE_PROJECT_githubPackagesPassword=$(gh auth token) \
-    ./gradlew :patches:build -x test -q ) || { echo "FAIL: gradle build"; exit 1; }
-fi
+    ./gradlew :patches:build -x test -q --configuration-cache ) || { echo "FAIL: gradle build"; return 1; }   # local only; CI/release unaffected
+}
+timed unit unit >out/unit-stage.log 2>&1 & unit_pid=$!
+timed build build >out/build-stage.log 2>&1 & build_pid=$!
+prereq_fail=0
+wait "$unit_pid" || prereq_fail=1
+wait "$build_pid" || prereq_fail=1
+cat out/unit-stage.log out/build-stage.log
+[ $prereq_fail = 0 ] || exit 1
 # Find the bundle after building (the version comes from gradle.properties): newest bundle, never sources/javadoc.
+if [ $BUILD = 1 ]; then
 RVP=$(ls "$SYNC_REPO"/patches/build/libs/patches-*.rvp 2>/dev/null | grep -v -e sources -e javadoc | sort -V | tail -1 || true)
 [ -n "$RVP" ] || { echo "FAIL: no patches-*.rvp in patches/build/libs (build first)"; exit 1; }
+fi
 
 # Patches we expect to apply. Keep in sync with what we ship.
 EXPECTED_PATCHES=(
@@ -69,7 +86,7 @@ EXPECTED_PATCHES=(
   "Fix Redgifs API" "Fix post thumbnails" "Fix video downloads"
   "Fix login redirect" "Fix galleries" "Fix Imgur" "Fix load more comments" "Disable telemetry" "Fix combined subreddit feeds" "Fix other discussions" "Fix random subreddit"
   "Fix DeviantArt embeds" "Hide restore comment" "Fix link previews"
-  "Fix Gfycat" "Fix Reddit image URLs" "Upgrade connections to HTTPS"
+  "Fix Gfycat" "Fix Reddit image URLs" "Upgrade connections to HTTPS" "Fix Reddit video playback" "Fix YouTube player"
 )
 EXTRA=()
 [ -n "${EXTRA_PATCHES:-}" ] && IFS=',' read -ra EXTRA <<< "$EXTRA_PATCHES"
@@ -78,12 +95,19 @@ ENABLE_ARGS=()
 for p in "${EXTRA[@]}"; do ENABLE_ARGS+=(-e "$p"); EXPECTED_PATCHES+=("$p"); done
 OPT_ARGS=(-O "OAuth client ID=$REDDIT_CLIENT_ID")
 
+if [ $BUILD = 1 ]; then
+stage_start=$SECONDS
 echo "== patch"
 # NB: in revanced-cli 6, -O options bind to the -e that precedes them.
 java -jar tools/revanced-cli-6.0.0-all.jar patch -p "$RVP" -b \
   -e "Spoof client" "${OPT_ARGS[@]}" "${ENABLE_ARGS[@]}" \
   --keystore out/sync.keystore -o "$OUT" --purge apk/sync-23.06.30.apk >"$LOG" 2>&1 \
   || { echo "FAIL: revanced-cli exited non-zero (see $LOG)"; tail -20 "$LOG"; exit 1; }
+
+echo "TIME patch: $((SECONDS - stage_start))s"
+else
+  [ -f "$OUT" ] && [ -f "$LOG" ] || { echo "FAIL: --no-build requires existing APK and patch.log"; exit 1; }
+fi
 
 fail=0
 for p in "${EXPECTED_PATCHES[@]}"; do
@@ -93,12 +117,15 @@ if grep -qE "SEVERE|failed|Exception" "$LOG"; then
   echo "  FAIL patcher reported errors:"; grep -E "SEVERE|failed|Exception" "$LOG" | head -10; fail=1
 fi
 
-echo "== smali diff"
+stage_start=$SECONDS
 rm -rf out/patched-smali
 apktool d -f -r -o out/patched-smali "$OUT" >/dev/null 2>&1
+echo "TIME decode: $((SECONDS - stage_start))s"
 ORIG=decompiled/sync-23.06.30-smali
+allowlist() {
+  echo "== smali diff"
 # Compare by class path, ignoring which classesN.dex a class landed in.
-python3 -I - "$ORIG" out/patched-smali tests/expected-changes.txt <<'EOF' || fail=1
+python3 -I - "$ORIG" out/patched-smali tests/expected-changes.txt <<'EOF'
 import sys, pathlib, hashlib, fnmatch, re
 orig, new, allow_file = map(pathlib.Path, sys.argv[1:4])
 def index(root):
@@ -125,14 +152,26 @@ pathlib.Path("out/changed-classes.txt").write_text("\n".join([f"changed {k}" for
 sys.exit(1 if unexpected else 0)
 EOF
 
-echo "== reachability"
-python3 -I "$ROOT/scripts/check_reachability.py" out/patched-smali || fail=1
+}
+reachability() {
+  echo "== reachability"
+  python3 -I "$ROOT/scripts/check_reachability.py" out/patched-smali
+}
+extension_api() {
+  echo "== extension api"
+  local rc=0
+  python3 -I "$ROOT/scripts/test_check_extension_api.py" >/dev/null || { echo "  FAIL: checker self-test"; rc=1; }
+  python3 -I "$ROOT/scripts/check_extension_api.py" out/patched-smali || rc=1
+  return "$rc"
+}
+pids=()
+for gate in allowlist reachability extension_api; do
+  timed "$gate" "$gate" >"out/$gate-stage.log" 2>&1 & pids+=("$!")
+done
+for pid in "${pids[@]}"; do wait "$pid" || fail=1; done
+cat out/allowlist-stage.log out/reachability-stage.log out/extension_api-stage.log
 
-echo "== extension api"
-# The extension compiles against upstream OkHttp; Sync ships a minified 5.0.0-alpha.8 (okio renamed).
-python3 -I "$ROOT/scripts/test_check_extension_api.py" >/dev/null || { echo "  FAIL: checker self-test"; fail=1; }
-python3 -I "$ROOT/scripts/check_extension_api.py" out/patched-smali || fail=1
-
+stage_start=$SECONDS
 echo "== manifest"
 AAPT2=$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)/aapt2
 MANIFEST=$("$AAPT2" dump xmltree --file AndroidManifest.xml "$OUT")
@@ -142,14 +181,22 @@ for flag in firebase_crashlytics_collection_enabled=false firebase_analytics_col
   else echo "  FAIL $flag missing (Disable telemetry)"; fail=1; fi
 done
 
+echo "TIME manifest: $((SECONDS - stage_start))s"
+stage_start=$SECONDS
 echo "== signature"
 apksigner verify "$OUT" >/dev/null 2>&1 && echo "  ok   apksigner" || { echo "  FAIL apksigner"; fail=1; }
 
+echo "TIME signature: $((SECONDS - stage_start))s"
 if [ $INSTALL = 1 ] && adb get-state >/dev/null 2>&1; then
+  sync_require_emulator   # never install test builds on a real phone
+  stage_start=$SECONDS
   echo "== install"
   adb install -r "$OUT" >/dev/null && echo "  ok   installed on $(adb get-serialno)" || { echo "  FAIL install"; fail=1; }
+  echo "TIME install: $((SECONDS - stage_start))s"
+  stage_start=$SECONDS
   echo "== art verifier"
   "$ROOT/scripts/art_verify.sh" "$OUT" || { echo "  FAIL ART verification (see above)"; fail=1; }
+  echo "TIME art: $((SECONDS - stage_start))s"
 fi
 
 [ $fail = 0 ] && echo "PASS: $OUT" || { echo "FAIL (details: $LOG, out/changed-classes.txt)"; exit 1; }

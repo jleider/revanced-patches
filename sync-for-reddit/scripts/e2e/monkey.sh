@@ -7,6 +7,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"   # sync-for-reddit/
 source "$ROOT/env.sh"
+sync_require_emulator
 PKG=com.laurencedawson.reddit_sync
 EVENTS=${1:-5000}; SEED=${2:-4242}
 HOSTS=$(mktemp "${TMPDIR:-/tmp}/sync-monkey-hosts.XXXXXX")

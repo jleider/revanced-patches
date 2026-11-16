@@ -2,6 +2,7 @@
 # Emulator helpers: emu.sh shot <name> | ui | tap <x> <y> | text <str> | key <code> | find <regex>
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # sync-for-reddit/
 source "$ROOT/env.sh"
+sync_require_emulator
 S="${SHOTS:-${TMPDIR:-/tmp}/sync-shots}"; mkdir -p "$S"
 case "$1" in
   shot) adb exec-out screencap -p > "$S/$2.png" && echo "$S/$2.png";;

@@ -4,6 +4,11 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"   # sync-for-reddit/
 source "$ROOT/env.sh"
+# Explicit serials retain the single-device workflow (including negative controls).
+if [ "${SYNC_FEATURE_WORKER:-0}" != 1 ] && { [ -n "${SYNC_EMULATORS:-}" ] || [ -z "${SYNC_EXPLICIT_SERIAL:-}" ]; }; then
+  exec "$SYNC_PY" -I "$ROOT/scripts/e2e/emulators.py" run "$@"
+fi
+sync_require_emulator
 # Start from the saved app-state baseline (settings, onboarding done, Crashlytics off).
 [ "${KEEP_STATE:-0}" = 1 ] || "$ROOT/scripts/e2e/app_state.sh" restore >/dev/null 2>&1 || { echo "FAIL: app_state.sh restore (run it by hand to see why)"; exit 1; }
 exec "$ROOT/.venv/bin/python" -I "$ROOT/scripts/e2e/features.py" "$@"

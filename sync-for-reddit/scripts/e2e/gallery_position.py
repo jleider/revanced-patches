@@ -9,8 +9,8 @@ COUNTER = r'^\d+ / \d+$'
 
 
 def main():
-    post = json.loads((ROOT / 'tests/fixtures/gallery_comments_endpoint.json').read_text())[0]['data']['children'][0]['data']
-    url = f"https://www.reddit.com/r/{post['subreddit']}/comments/{post['id']}?is_gallery=true"
+    import live
+    url = live.gallery()   # found at run time
     d = connect()
 
     def open_gallery():

@@ -72,3 +72,7 @@ lc/f.smali                                   # SimpleExoPlayerTextureView (avoid
 # com/android/volley/RequestQueue.smali above also: Fix Gfycat (local error delivery)
 # --- ours: Upgrade connections to HTTPS
 okhttp3/OkHttpClient$Builder.smali              # build(): append HttpsUpgradeInterceptor to every client
+# --- ours: Fix Reddit video playback
+xc/a.smali                                   # ExoplayerUtils (v.redd.it HLS -> DASH source)
+com/laurencedawson/reddit_sync/ui/views/video/CustomExoPlayerView.smali # Fix Reddit video playback (viewer source)
+com/laurencedawson/reddit_sync/ui/activities/CustomYouTubeVideoActivity.smali # Fix YouTube player

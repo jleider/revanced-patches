@@ -8,6 +8,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # sync-for-reddit/
 source "$ROOT/env.sh"
+sync_require_emulator
 PATCHED=${1:-$ROOT/out/sync-patched-debug.apk}
 adb root >/dev/null 2>&1; adb wait-for-device
 T=/data/local/tmp/artverify; adb shell "rm -rf $T; mkdir -p $T"

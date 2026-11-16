@@ -8,6 +8,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"   # sync-for-reddit/
 source "$ROOT/env.sh"
+sync_require_emulator
 PKG=com.laurencedawson.reddit_sync
 BASE=$ROOT/out/appstate/baseline.tgz
 UI="python3 -I $ROOT/scripts/e2e/ui.py"

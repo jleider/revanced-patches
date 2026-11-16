@@ -8,14 +8,25 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # sync-for-reddit/
 source "$ROOT/env.sh"
+sync_require_emulator
 cd "$ROOT"; source secrets.env
 [ $# -ge 2 ] || { echo "usage: $0 <git-ref> <scenario>..."; exit 2; }
 REF=$1; shift
+SHA=$(git -C "$SYNC_REPO" rev-parse --verify "$REF^{commit}")
+# Negative controls must use the selected device, never the shard pool.
+unset SYNC_EMULATORS
+export SYNC_FEATURE_WORKER=1
 CUR=out/sync-patched-debug.apk
 [ -f "$CUR" ] || { echo "FAIL: $CUR missing; run scripts/verify_patch.sh --debug first"; exit 1; }
-SRC=out/negctl/src; APK=out/negctl/sync-negctl-debug.apk
-rm -rf out/negctl; mkdir -p "$SRC"
-git -C "$SYNC_REPO" archive "$REF" | tar -x -C "$SRC"
+SRC=out/negctl/src; APK=out/negctl/cache/$SHA.apk
+mkdir -p out/negctl/cache
+# Serialize the archive, patch log and cache publication.
+NEGLOCK=out/negctl/.lock
+mkdir "$NEGLOCK" 2>/dev/null || { echo "FAIL: another negative control is running"; exit 1; }
+trap 'rmdir "$NEGLOCK"' EXIT
+if [ ! -s "$APK" ]; then
+rm -rf "$SRC"; mkdir -p "$SRC"
+git -C "$SYNC_REPO" archive "$SHA" | tar -x -C "$SRC"
 echo "== build $REF"
 ( cd "$SRC" && \
   ORG_GRADLE_PROJECT_githubPackagesUsername=$(gh api user -q .login) \
@@ -24,13 +35,17 @@ echo "== build $REF"
 RVP=$(ls "$SRC"/patches/build/libs/patches-*.rvp | grep -v sources | head -1)
 java -jar tools/revanced-cli-6.0.0-all.jar patch -p "$RVP" -b \
   -e "Spoof client" -O "OAuth client ID=$REDDIT_CLIENT_ID" -e "Enable debug logging" \
-  --keystore out/sync.keystore -o "$APK" --purge apk/sync-23.06.30.apk > out/negctl/patch.log 2>&1 \
+  --keystore out/sync.keystore -o "$APK.tmp.apk" --purge apk/sync-23.06.30.apk > out/negctl/patch.log 2>&1 \
   || { echo "FAIL: patching with $REF (out/negctl/patch.log)"; exit 1; }
+mv "$APK.tmp.apk" "$APK"
+else
+  echo "== cached $SHA"
+fi
 restore() {
   echo "== reinstall current build"
   adb install -r "$CUR" >/dev/null || echo "WARN: reinstall of $CUR failed"   # -r keeps app data/prefs
 }
-trap restore EXIT
+trap 'restore; rmdir "$NEGLOCK"' EXIT
 echo "== install $REF"
 adb install -r "$APK" >/dev/null
 fail=0

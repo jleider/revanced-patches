@@ -17,6 +17,7 @@ read-only GETs, plus one read-only POST to /api/morechildren.
 """
 import datetime as dt
 import json
+import re
 import pathlib
 import sys
 import urllib.error
@@ -51,7 +52,10 @@ FIXDIR = ROOT / "tests" / "fixtures"
 
 def http(method, url, headers=None, data=None, timeout=20):
     body = urllib.parse.urlencode(data).encode() if data else None
-    req = urllib.request.Request(url, data=body, method=method, headers={"User-Agent": UA, **(headers or {})})
+    try:
+        req = urllib.request.Request(url, data=body, method=method, headers={"User-Agent": UA, **(headers or {})})
+    except ValueError as e:   # malformed/empty URL: report as a failed request, never abort the probe
+        return 0, str(e).encode()
     try:
         with _opener.open(req, timeout=timeout) as r:
             return r.status, r.read()
@@ -95,6 +99,15 @@ def has(obj, *paths):
         except Exception:
             missing.append(p)
     return missing
+
+
+def live():
+    """scripts/e2e/live.py: test posts are found at run time, never hard-coded."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("live", ROOT / "scripts/e2e/live.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def main():
@@ -237,45 +250,35 @@ def main():
     st, b = http("GET", "https://backend.deviantart.com/oembed?url=https://www.deviantart.com/team/art/Fella-Celebrates-100k-971957229")
     rec("DeviantArt oEmbed over https (patch: deviantart)", "patch: deviantart", True, st,
         st == 200 and bool((js(b) or {}).get("url")))
-    st, b = http("GET", "https://imgur.com/a/sJZM4Ce")
+    L = live()
+    try:
+        album_url, album_count = L.imgur_album_url()
+    except L.NotFound:
+        album_url, album_count = None, 0
+    st, b = http("GET", album_url) if album_url else (0, b"")
     rec("Imgur album page og:image (patch: link previews)", "patch: linkpreview", False, st,
         st == 200 and b"og:image" in (b or b""))
 
-    # --- Fixture freshness: e2e/smoke posts get removed; a stale fixture is not an app bug ------
-    fxp = json.loads((ROOT / "tests/fixtures/e2e_posts.json").read_text())
-    gal = json.loads((ROOT / "tests/fixtures/gallery_comments_endpoint.json").read_text())[0]["data"]["children"][0]["data"]["id"]
-    ids = {k: v.split("/comments/")[1].strip("/") for k, v in fxp.items() if isinstance(v, str) and "/comments/" in v}
-    ids["gallery (smoke/features)"] = gal
-    st, b = http("GET", f"{O}/by_id/" + ",".join("t3_" + i for i in ids.values()), H)
-    live = {c["data"]["id"]: c["data"] for c in ((js(b) or {}).get("data") or {}).get("children", [])}
-    if st != 200:   # /by_id is 403 for app-only tokens; fall back to one request per post
-        live = {}
-        for i in ids.values():
-            st2, b2 = http("GET", f"{O}/comments/{i}?limit=1&depth=0", H)
-            j = js(b2)
-            if st2 == 200 and j:
-                live[i] = j[0]["data"]["children"][0]["data"]
-    for k, i in ids.items():
-        d = live.get(i)
-        stale = "not found" if d is None else (d.get("removed_by_category") or "")
-        if k.startswith("gallery") and d is not None and not d.get("is_gallery"):
-            stale = stale or "no longer a gallery"
-        rec(f"fixture {k} ({i}) live", "tests/fixtures", True, 200 if d else 404, not stale,
-            f"STALE: {stale}; " + ("run --save" if k.startswith("gallery") else "replace in e2e_posts.json") if stale else "")
+    # --- Live e2e test posts (scripts/e2e/live.py): a missing kind makes its scenario SKIP ----------
+    for name, finder in L.FINDERS.items():
+        if name in ("imgur_album_url", "imgur_gif_id"):
+            continue
+        try:
+            found = finder()
+            rec(f"e2e live post: {name}", "scripts/e2e/live.py", False, 200, True, str(found)[:60])
+        except L.NotFound as e:
+            rec(f"e2e live post: {name}", "scripts/e2e/live.py", False, 404, False, f"scenario will SKIP: {e}")
 
-    # --- v.redd.it (patch: Fix Gfycat's viewer hook maps direct MP4 links to HLS) -----
-    fx = json.loads((ROOT / "tests/fixtures/e2e_posts.json").read_text())
-    for vid, label in [(fx["reddit_video_with_audio"], "native video"),
-                       (fx["gfycat_with_copy_mp4"].split("/")[0], "Gfycat archive")]:
-        st, b = http("GET", f"https://v.redd.it/{vid}/HLSPlaylist.m3u8")
-        rec(f"v.redd.it HLS playlist ({label})", "patch: gfycat/mp4 audio", True, st,
-            st == 200 and (b or b"").startswith(b"#EXTM3U"))
-        if label == "native video":
-            rec("v.redd.it HLS lists an audio rendition", "patch: gfycat/mp4 audio", True, st,
-                b"TYPE=AUDIO" in (b or b""), "reddit_mp4_audio e2e depends on it")
-    vid = fx["reddit_video_with_audio"]
-    st, _ = http("GET", f"https://v.redd.it/{vid}/CMAF_480.mp4")
-    rec("v.redd.it CMAF_480.mp4 direct file (e2e deep link)", "patch: gfycat/mp4 audio", True, st, st == 200)
+    # --- v.redd.it (Fix Reddit video playback: DASH; Fix Gfycat: direct MP4 links -> DASH) ----------
+    try:
+        _, vid = L.reddit_video()
+        st, b = http("GET", f"https://v.redd.it/{vid}/DASHPlaylist.mpd")
+        rec("v.redd.it DASH playlist (current video)", "patch: redditvideo", True, st, st == 200 and (b or b"").lstrip().startswith(b"<"))
+        st, _ = http("GET", f"https://v.redd.it/{vid}/HLSPlaylist.m3u8")
+        rec("v.redd.it HLS playlist (Sync's original path)", "CustomExoPlayerView", False, st, st == 200,
+            "was 403 for some videos on 2026-11-16; patched app uses DASH")
+    except L.NotFound as e:
+        rec("v.redd.it DASH playlist (current video)", "patch: redditvideo", True, 0, False, str(e))
 
     # --- Reddit image CDN and HTML-escaped URLs (patch: Fix Reddit image URLs) ---------
     img = next((p for p in posts if (p.get("preview") or {}).get("images")), None)
@@ -289,14 +292,30 @@ def main():
         st, _ = http("GET", esc.replace("&amp;", "&"))
         rec("preview.redd.it unescaped (patched)", "patch: imageurls", True, st, st == 200)
 
+    # --- Redgifs (upstream Fix Redgifs API + our /info emulation) ------------------------
+    st, _ = http("GET", "https://api.redgifs.com/info")
+    rec("redgifs /info (Sync GrabIpRequest)", "GrabIpRequest", False, st, st == 200, "404 since 2026-11; answered locally by Fix Redgifs API")
+    st, b = http("GET", "https://api.redgifs.com/v2/auth/temporary")
+    rtok = (js(b) or {}).get("token")
+    rec("redgifs temporary token (upstream patch)", "patch: redgifs", True, st, st == 200 and rtok)
+    if rtok:
+        st, b = http("GET", "https://api.redgifs.com/v2/gifs/search?order=trending&count=5", {"Authorization": f"Bearer {rtok}"})
+        gid = (((js(b) or {}).get("gifs") or [{}])[0]).get("id")
+        st, b = http("GET", f"https://api.redgifs.com/v2/gifs/{gid}?user-addr=&user-agent=Sync", {"Authorization": f"Bearer {rtok}"})
+        rec("redgifs gif lookup with empty user-addr", "GrabRedgifRequest", True, st, st == 200 and not has(js(b), "gif.urls.hd"))
+
     # --- Third-party media hosts ---------------------------------------------------
-    imgur_id = "xIolo"
+    try:
+        imgur_id = L.imgur_gif_id()
+    except L.NotFound:
+        imgur_id = None
     # Sync's own Imgur proxy (salted URLs, salt not reproduced here); informational, expected dead.
     st, _ = http("GET", "https://images.syncforreddit.com/")
     rec("imgur proxy images.syncforreddit.com (Sync s8.d/s8.b)", "ImgurSingleImageRequest", False, st, st == 200,
         "dev's proxy; expected dead")
     # Fix Imgur loads albums from the public embed page (no API key) and parses its inline JSON.
-    st, b = http("GET", "https://imgur.com/a/xa2J11z/embed?pub=true")
+    embed = re.sub(r"^.*imgur\.com/(?:a|gallery)/(?:[^/?#]*-)?([A-Za-z0-9]{5,8}).*$", r"https://imgur.com/a/\1/embed?pub=true", album_url or "")
+    st, b = http("GET", embed) if album_url else (0, b"")
     import re as _re
     m = _re.search(rb'\bimages\s*=\s*(\{\s*"count")', b or b"")
     n = 0
@@ -307,13 +326,16 @@ def main():
             n = 0
     rec("imgur album embed page inline JSON (patched path)", "patch: imgur", True, st, st == 200 and n >= 2, f"{n} images")
     for name, url, must in [
-        ("i.imgur.com direct gif", f"https://i.imgur.com/{imgur_id}.gif", True),
-        ("i.imgur.com direct mp4", f"https://i.imgur.com/{imgur_id}.mp4", True),
+        ("i.imgur.com direct gif", f"https://i.imgur.com/{imgur_id}.gif", True) if imgur_id else ("i.imgur.com direct gif (no live post)", "", False),
+        ("i.imgur.com direct mp4", f"https://i.imgur.com/{imgur_id}.mp4", True) if imgur_id else ("i.imgur.com direct mp4 (no live post)", "", False),
         ("gfycat API", "https://api.gfycat.com/v1/gfycats/test", False),
         ("streamable API", "https://api.streamable.com/videos/abc", False),
-        ("redgifs temporary auth (upstream patch)", "https://api.redgifs.com/v2/auth/temporary", False),
+
         ("giphy CDN", "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.mp4", True),
     ]:
+        if not url:   # no live post to test with: report, don't abort the probe
+            rec(name, "-", False, 0, False, "no live post right now")
+            continue
         st, _ = http("GET", url)
         rec(name, "-", must, st, st == 200)
 

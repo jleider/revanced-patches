@@ -31,3 +31,27 @@ export PATH="$JAVA_HOME/bin:$BUILD_TOOLS:$ANDROID_HOME/platform-tools:$ANDROID_H
 
 # Python venv for the e2e tooling (python3 -m venv .venv && .venv/bin/pip install -r requirements.txt).
 export SYNC_PY="$SYNC_DIR/.venv/bin/python"
+
+if [ -n "${ANDROID_SERIAL:-}" ] && [ "$ANDROID_SERIAL" != "${SYNC_AUTO_SERIAL:-}" ]; then
+  export SYNC_EXPLICIT_SERIAL=1
+fi
+
+# Test device: the e2e/verify scripts clear app data, restore state and toggle device settings, so they
+# must only ever touch an emulator. Default to the first running emulator even when a phone is plugged in.
+if [ -z "${ANDROID_SERIAL:-}" ] && command -v adb >/dev/null 2>&1; then
+  ANDROID_SERIAL="$(adb devices 2>/dev/null | awk '/^emulator-[0-9]+[[:space:]]+device$/ {print $1; exit}')"
+  export SYNC_AUTO_SERIAL="$ANDROID_SERIAL"
+fi
+[ -n "${ANDROID_SERIAL:-}" ] && export ANDROID_SERIAL
+# Call before anything that wipes or changes device state: refuses real phones.
+sync_require_emulator() {
+  case "${ANDROID_SERIAL:-}" in
+    emulator-[0-9]*) ;;
+    *) echo "FAIL: set ANDROID_SERIAL to an emulator before changing device state"; exit 1;;
+  esac
+  if [ "$(adb shell getprop ro.kernel.qemu 2>/dev/null | tr -d '\r')" != "1" ] \
+     && [ "$(adb shell getprop ro.boot.qemu 2>/dev/null | tr -d '\r')" != "1" ]; then
+    echo "FAIL: ${ANDROID_SERIAL:-the selected device} is not an emulator; these tests clear app data. Start the sync34 emulator or set ANDROID_SERIAL=emulator-NNNN."
+    exit 1
+  fi
+}

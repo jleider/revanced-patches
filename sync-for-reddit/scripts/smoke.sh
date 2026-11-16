@@ -8,25 +8,27 @@
 #   - the app process is still alive and nothing for the package hit the crash buffer
 #   - Sync logged at least one request URL
 #   - no Reddit block page (HTML 403) or "Could not load gallery" appeared in Sync's logs
-# Post IDs come from tests/fixtures (refreshed by `scripts/probe_endpoints.py --save`).
+# Posts are found live at run time (scripts/e2e/live.py).
 # Screenshots: $SHOTS/smoke-<scenario>.png
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # sync-for-reddit/
 source "$ROOT/env.sh"
+sync_require_emulator
 PKG=com.laurencedawson.reddit_sync
 SHOTS=${SHOTS:-${TMPDIR:-/tmp}/sync-shots}
 mkdir -p "$SHOTS"
 
-fix() { python3 -I -c "import json,sys;d=json.load(open('$ROOT/tests/fixtures/$1'));print($2)"; }
-GALLERY_ID=$(fix gallery_comments_endpoint.json "d[0]['data']['children'][0]['data']['id']")
-GALLERY_SUB=$(fix gallery_comments_endpoint.json "d[0]['data']['children'][0]['data']['subreddit']")
-THREAD_ID=$(fix more_stub.json "d['link_id']")
+# Test posts are found live at run time (scripts/e2e/live.py); nothing is hard-coded.
+live() { python3 -I "$ROOT/scripts/e2e/live.py" --get "$@"; }
+THREAD=$(live big_thread) || { echo "SKIP: no live thread"; exit 1; }
+GALLERY=$(live gallery) || { echo "SKIP: no live gallery"; exit 1; }
+VIDEO_ID=$(live reddit_video 1) || { echo "SKIP: no live video"; exit 1; }
 
 declare -A URLS=(
   [frontpage]=""
-  [thread]="https://www.reddit.com/comments/$THREAD_ID"
-  [gallery]="https://www.reddit.com/r/$GALLERY_SUB/comments/$GALLERY_ID?is_gallery=true"
-  [video]="${SMOKE_VIDEO_URL:-https://v.redd.it/h3m7jsx8es1i1}"
+  [thread]="https://www.reddit.com$THREAD"
+  [gallery]="$GALLERY"
+  [video]="${SMOKE_VIDEO_URL:-https://v.redd.it/$VIDEO_ID}"
 )
 # Optional log line (regex) a scenario must produce to pass, beyond "no errors".
 declare -A EXPECT=(

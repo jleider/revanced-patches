@@ -16,11 +16,19 @@ import time
 
 ADB = shutil.which("adb") or os.path.join(os.environ.get("ANDROID_HOME", ""), "platform-tools", "adb")
 
+SERIAL = os.environ.get('ANDROID_SERIAL', '')
+if not re.fullmatch(r'emulator-\d+', SERIAL):
+    sys.exit('FAIL: ANDROID_SERIAL must explicitly select an emulator')
+if not any(subprocess.run([ADB, '-s', SERIAL, 'shell', 'getprop', prop],
+                          capture_output=True, text=True, check=True).stdout.strip() == '1'
+           for prop in ('ro.kernel.qemu', 'ro.boot.qemu')):
+    sys.exit('FAIL: selected device is not an emulator')
+
 
 def nodes():
     for _ in range(3):
-        subprocess.run([ADB, "shell", "uiautomator", "dump", "/sdcard/ui.xml"], capture_output=True)
-        xml = subprocess.run([ADB, "shell", "cat", "/sdcard/ui.xml"], capture_output=True, text=True).stdout
+        subprocess.run([ADB, "-s", SERIAL, "shell", "uiautomator", "dump", "/sdcard/ui.xml"], capture_output=True)
+        xml = subprocess.run([ADB, "-s", SERIAL, "shell", "cat", "/sdcard/ui.xml"], capture_output=True, text=True).stdout
         if "<node" in xml:
             break
         time.sleep(1)
@@ -67,7 +75,7 @@ def main():
         if not n:
             print(f"ui.py: no node matching {rx!r}", file=sys.stderr)
             sys.exit(1)
-        subprocess.run([ADB, "shell", "input", "tap", str(n["x"]), str(n["y"])])
+        subprocess.run([ADB, "-s", SERIAL, "shell", "input", "tap", str(n["x"]), str(n["y"])])
         return
     if cmd == "gone":
         end = time.time() + timeout
