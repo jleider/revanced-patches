@@ -14,6 +14,7 @@ import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.net.UnknownServiceException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -32,8 +33,10 @@ import okhttp3.ResponseBody;
  * linked page, read og:image / twitter:image, and return that image. No third-party service.
  * <p>
  * The phone now fetches pages a post or comment links to, so the fetches use their own client:
- * DNS refuses private, loopback, link-local and carrier-NAT addresses (also after redirects), the
- * call has a time limit, images are size-capped, and http:// is tried over https first (the
+ * DNS refuses private, loopback, link-local and carrier-NAT addresses, redirects are followed by hand
+ * with every hop checked before connecting (IP literals skip DNS), images are read here with a hard
+ * 10 MB cap on the decoded bytes (chunked or compressed responses included) before Glide sees them,
+ * and the call has a 20 s timeout. http:// is tried over https first (the
  * Upgrade connections to HTTPS patch, with an http fallback so previews keep working).
  *
  * @noinspection unused
@@ -41,7 +44,7 @@ import okhttp3.ResponseBody;
 public final class FixLinkPreviewsPatch implements Interceptor {
     private static final String PROXY = "https://ap.syncforreddit.com/image?url=";
     private static final int MAX_HTML_BYTES = 256 * 1024;
-    private static final long MAX_IMAGE_BYTES = 15L * 1024 * 1024;
+    static final int MAX_IMAGE_BYTES = 10 * 1024 * 1024;
     private static final String NONE = "";
     private static final Pattern META = Pattern.compile("<meta\\b[^>]*>", Pattern.CASE_INSENSITIVE);
     private static final Pattern ATTR = Pattern.compile(
@@ -68,6 +71,38 @@ public final class FixLinkPreviewsPatch implements Interceptor {
             if (allowed.isEmpty()) throw new UnknownHostException("Preview blocked: " + host + " is a private address");
             return allowed;
         }
+    };
+
+    /**
+     * True if the request must not be made: an IP-literal host (OkHttp skips DNS for those, so
+     * PUBLIC_ONLY_DNS never sees them) or a direct connection to a private address. Runs as a network
+     * interceptor, so it sees every hop including redirects, and checks the address actually connected
+     * to (covers DNS rebinding). Through a proxy only the host can be checked.
+     */
+    static boolean blockedHop(String host, InetAddress connected, boolean viaProxy) {
+        if (host != null && (host.indexOf(':') >= 0 || host.matches("[0-9.]+"))) {
+            try {
+                if (isPrivate(InetAddress.getByName(host))) return true;   // literal: no DNS lookup
+            } catch (UnknownHostException e) {
+                return true;
+            }
+        }
+        return !viaProxy && connected != null && isPrivate(connected);
+    }
+
+    static final Interceptor PUBLIC_ONLY_HOPS = chain -> {
+        Request request = chain.request();
+        InetAddress connected = null;
+        boolean viaProxy = false;
+        okhttp3.Connection connection = chain.connection();
+        if (connection != null) {
+            okhttp3.Route route = connection.route();
+            viaProxy = route.proxy().type() != java.net.Proxy.Type.DIRECT;
+            connected = route.socketAddress().getAddress();
+        }
+        if (blockedHop(request.url().host(), connected, viaProxy))
+            throw new UnknownHostException("Preview blocked: " + request.url().host() + " is a private address");
+        return chain.proceed(request);
     };
 
     static boolean isPrivate(InetAddress a) {
@@ -104,6 +139,10 @@ public final class FixLinkPreviewsPatch implements Interceptor {
             synchronized (FixLinkPreviewsPatch.class) {
                 if (client == null) client = new OkHttpClient.Builder()
                         .dns(PUBLIC_ONLY_DNS)
+                        // Redirects are followed in fetch(), so every hop is checked before connecting.
+                        .followRedirects(false)
+                        .followSslRedirects(false)
+                        .addNetworkInterceptor(PUBLIC_ONLY_HOPS)
                         .callTimeout(20, TimeUnit.SECONDS)
                         .build();   // build() also adds the HTTPS upgrade interceptor in the app
             }
@@ -111,8 +150,30 @@ public final class FixLinkPreviewsPatch implements Interceptor {
         return client;
     }
 
-    private static Response fetch(Chain chain, Request request) throws IOException {
-        return fetchThroughChainForTests ? chain.proceed(request) : client().newCall(request).execute();
+    private static final int MAX_REDIRECTS = 5;
+
+    /**
+     * Sends the request and follows redirects by hand. Before each hop (the first request too) the
+     * target is checked: only http(s), and no IP-literal private host. OkHttp skips DNS for IP
+     * literals, so PUBLIC_ONLY_DNS alone can't stop them, and checking after connecting is too late.
+     */
+    static Response fetch(Chain chain, Request request) throws IOException {
+        Request current = request;
+        for (int hop = 0; ; hop++) {
+            String scheme = current.url().scheme();
+            if (!"http".equals(scheme) && !"https".equals(scheme))
+                throw new UnknownServiceException("Preview blocked: " + scheme);
+            if (blockedHop(current.url().host(), null, false))
+                throw new UnknownHostException("Preview blocked: " + current.url().host() + " is a private address");
+            Response response = fetchThroughChainForTests ? chain.proceed(current) : client().newCall(current).execute();
+            if (!response.isRedirect()) return response;
+            String location = response.header("Location");
+            response.close();
+            okhttp3.HttpUrl next = location == null ? null : current.url().resolve(location);
+            if (next == null) throw new IOException("Preview redirect without a usable Location");
+            if (hop >= MAX_REDIRECTS) throw new IOException("Preview: too many redirects");
+            current = current.newBuilder().url(next).build();
+        }
     }
 
     public static OkHttpClient.Builder addInterceptor(OkHttpClient.Builder builder) {
@@ -179,26 +240,49 @@ public final class FixLinkPreviewsPatch implements Interceptor {
             throw e;
         }
         String type = response.header("Content-Type", "");
-        String length = response.header("Content-Length");
-        if (length != null) {
-            try {
-                if (Long.parseLong(length.trim()) > MAX_IMAGE_BYTES) {
-                    response.close();
-                    remember(page, null, System.currentTimeMillis());
-                    throw new IOException("Preview image too large: " + length + " bytes");
-                }
-            } catch (NumberFormatException ignored) {
-                // no usable length: the call timeout bounds the download
-            }
-        }
         if (!response.isSuccessful() || !type.toLowerCase(Locale.ROOT).startsWith("image/")) {
             response.close();
             // e.g. an expired signed og:image URL: look the page up again next time.
             forget(page);
             throw new IOException("Preview image failed: " + response.code() + " " + type);
         }
+        // Read the image here with a hard cap on the decoded bytes; Glide gets a bounded copy.
+        byte[] bytes;
+        try {
+            bytes = readCapped(response, MAX_IMAGE_BYTES);
+        } catch (IOException e) {
+            remember(page, null, System.currentTimeMillis());   // too large: don't retry it
+            throw e;
+        }
         // Glide caches by its own key; hand back the image as the answer to the original request.
-        return response.newBuilder().request(request).build();
+        return response.newBuilder().request(request)
+                .removeHeader("Content-Length").removeHeader("Content-Encoding")
+                .body(ResponseBody.create(bytes, response.body().contentType()))
+                .build();
+    }
+
+    /** Reads the whole (decoded) body, failing as soon as it exceeds {@code max} bytes. Closes the response. */
+    static byte[] readCapped(Response response, int max) throws IOException {
+        try (Response r = response) {
+            ResponseBody body = r.body();
+            if (body == null) throw new IOException("Preview image has no body");
+            long declared = body.contentLength();
+            String header = r.header("Content-Length");
+            if (header != null) {
+                try { declared = Math.max(declared, Long.parseLong(header.trim())); } catch (NumberFormatException ignored) { }
+            }
+            // Reject early when the size is declared; otherwise the read below enforces the cap.
+            if (declared > max) throw new IOException("Preview image too large: " + declared + " bytes");
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream(declared > 0 ? (int) Math.min(declared, max) : 64 * 1024);
+            byte[] buffer = new byte[16 * 1024];
+            InputStream in = body.byteStream();
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                if (out.size() + read > max) throw new IOException("Preview image too large: over " + max + " bytes");
+                out.write(buffer, 0, read);
+            }
+            return out.toByteArray();
+        }
     }
 
     /** Maps the proxy's url= value to the page to scrape, or null when there's nothing to preview. */

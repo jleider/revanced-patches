@@ -13,6 +13,8 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import javax.net.ssl.SSLException;
+import javax.net.ssl.SSLHandshakeException;
+import javax.net.ssl.SSLPeerUnverifiedException;
 
 import okhttp3.HttpUrl;
 import okhttp3.Interceptor;
@@ -64,14 +66,18 @@ public final class HttpsUpgradeInterceptor implements Interceptor {
     }
 
     /**
-     * Failures where HTTPS itself didn't work (no TLS on 443, bad certificate, port closed), so
-     * retrying over http is safe. A timeout may happen after the request was sent, so it only counts
-     * for idempotent GET/HEAD; a POST is never sent twice.
+     * Failures where HTTPS itself didn't work, so retrying over http is safe. Only failures before the
+     * request could have been sent count for every method: refused/unreachable port, TLS handshake
+     * failure (bad or missing certificate), cleartext policy. Other TLS errors and timeouts can happen
+     * after the request was written, so they only count for idempotent GET/HEAD: a POST is never
+     * sent twice.
      */
     static boolean httpsUnavailable(IOException e, String method) {
-        if (e instanceof SSLException || e instanceof ConnectException || e instanceof NoRouteToHostException
+        if (e instanceof ConnectException || e instanceof NoRouteToHostException
+                || e instanceof SSLHandshakeException || e instanceof SSLPeerUnverifiedException
                 || e instanceof UnknownServiceException) return true;
-        return e instanceof SocketTimeoutException && ("GET".equals(method) || "HEAD".equals(method));
+        boolean idempotent = "GET".equals(method) || "HEAD".equals(method);
+        return idempotent && (e instanceof SSLException || e instanceof SocketTimeoutException);
     }
 
     @Override

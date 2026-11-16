@@ -281,6 +281,13 @@ public final class ExtensionHarness {
         boolean threw = false;
         try { new HttpsUpgradeInterceptor().intercept(post); } catch (java.net.SocketTimeoutException e) { threw = true; }
         check(threw && post.requested.size() == 1, "https: POST is never re-sent after a timeout");
+        UpgradeChain postTls = new UpgradeChain("http://tls-after-send.example/a", "POST", new javax.net.ssl.SSLException("connection reset after write"));
+        threw = false;
+        try { new HttpsUpgradeInterceptor().intercept(postTls); } catch (javax.net.ssl.SSLException e) { threw = true; }
+        check(threw && postTls.requested.size() == 1, "https: POST is not re-sent after a TLS error that may follow the write");
+        UpgradeChain postHandshake = new UpgradeChain("http://no-cert-post.example/a", "POST", new javax.net.ssl.SSLHandshakeException("no cert"));
+        new HttpsUpgradeInterceptor().intercept(postHandshake);
+        eq(postHandshake.requested.size(), 2, "https: POST falls back after a handshake failure (nothing was sent)");
         UpgradeChain get = new UpgradeChain("http://slow-get.example/a", "GET", new java.net.SocketTimeoutException("connect"));
         new HttpsUpgradeInterceptor().intercept(get);
         eq(get.requested.size(), 2, "https: GET timeout falls back");
@@ -314,20 +321,66 @@ public final class ExtensionHarness {
         try { FixLinkPreviewsPatch.PUBLIC_ONLY_DNS.lookup("127.0.0.1"); } catch (java.net.UnknownHostException e) { blocked = true; }
         check(blocked, "preview dns: IP literal on loopback refused");
 
-        // Oversized preview image (Content-Length) fails and is remembered as "no preview".
-        FixLinkPreviewsPatch.fetchThroughChainForTests = true;
-        String proxy = "https://ap.syncforreddit.com/image?url=";
-        okhttp3.Interceptor.Chain big = new FakeChain(proxy + "https://site.example/huge",
-                "<meta property=\"og:image\" content=\"https://cdn.example/huge.png\">", "image/png", 200) {
+        // IP-literal hosts bypass DNS in OkHttp; the per-hop check must catch them (and redirects to them).
+        check(FixLinkPreviewsPatch.blockedHop("192.168.1.1", null, false), "preview hop: private IPv4 literal");
+        check(FixLinkPreviewsPatch.blockedHop("127.0.0.1", null, true), "preview hop: loopback literal even via proxy");
+        check(FixLinkPreviewsPatch.blockedHop("::1", null, false), "preview hop: IPv6 loopback literal");
+        check(FixLinkPreviewsPatch.blockedHop("example.com", java.net.InetAddress.getByName("10.1.2.3"), false), "preview hop: name resolving to LAN (rebinding)");
+        check(!FixLinkPreviewsPatch.blockedHop("example.com", java.net.InetAddress.getByName("10.0.2.2"), true), "preview hop: proxy address itself is not the target");
+        check(!FixLinkPreviewsPatch.blockedHop("example.com", java.net.InetAddress.getByName("93.184.215.14"), false), "preview hop: public address allowed");
+        check(!FixLinkPreviewsPatch.blockedHop("8.8.8.8", null, false), "preview hop: public IPv4 literal allowed");
+        // Redirects are followed by hand and every hop is checked before it is requested.
+        java.util.List<String> hops = new java.util.ArrayList<>();
+        okhttp3.Interceptor.Chain redirecting = new FakeChain("https://site.example/r", "", "image/png", 200) {
             @Override public okhttp3.Response proceed(okhttp3.Request r) {
-                okhttp3.Response res = super.proceed(r);
-                return r.url().host().startsWith("site.") ? res : res.newBuilder().header("Content-Length", "99999999").build();
+                hops.add(r.url().toString());
+                String to = r.url().encodedPath().equals("/r") ? "http://192.168.1.1/admin"
+                        : r.url().encodedPath().equals("/ok") ? "/img.png" : null;
+                okhttp3.Response.Builder b = new okhttp3.Response.Builder().request(r).protocol(okhttp3.Protocol.HTTP_1_1)
+                        .message("x").body(okhttp3.ResponseBody.create("", null));
+                return to != null ? b.code(302).header("Location", to).build() : b.code(200).header("Content-Type", "image/png").build();
             }
         };
-        boolean failed = false;
-        try { new FixLinkPreviewsPatch().intercept(big); } catch (java.io.IOException e) { failed = e.getMessage().contains("too large"); }
-        check(failed, "preview: image over the size cap is refused");
-        eq(FixLinkPreviewsPatch.cached("https://site.example/huge", System.currentTimeMillis()), "", "preview: oversized image cached as no preview");
+        boolean stopped = false;
+        try { FixLinkPreviewsPatch.fetch(redirecting, new okhttp3.Request.Builder().url("https://site.example/r").build()); }
+        catch (java.net.UnknownHostException e) { stopped = true; }
+        check(stopped && hops.equals(java.util.Collections.singletonList("https://site.example/r")), "preview fetch: redirect to a LAN IP is refused before it is requested");
+        hops.clear();
+        okhttp3.Response followed = FixLinkPreviewsPatch.fetch(redirecting, new okhttp3.Request.Builder().url("https://site.example/ok").build());
+        eq(followed.request().url().toString(), "https://site.example/img.png", "preview fetch: relative redirect followed");
+        stopped = false;
+        try { FixLinkPreviewsPatch.fetch(redirecting, new okhttp3.Request.Builder().url("http://10.0.0.1/x").build()); }
+        catch (java.net.UnknownHostException e) { stopped = true; }
+        check(stopped, "preview fetch: private IP literal refused on the first request");
+        // Oversized preview image fails and is remembered as "no preview": by Content-Length, and also
+        // without one (chunked/compressed), by counting the decoded bytes.
+        FixLinkPreviewsPatch.fetchThroughChainForTests = true;
+        String proxy = "https://ap.syncforreddit.com/image?url=";
+        for (String key : new String[]{"huge", "chunked"}) {
+            final boolean declared = key.equals("huge");
+            okhttp3.Interceptor.Chain big = new FakeChain(proxy + "https://site.example/" + key,
+                    "<meta property=\"og:image\" content=\"https://cdn.example/" + key + ".png\">", "image/png", 200) {
+                @Override public okhttp3.Response proceed(okhttp3.Request r) {
+                    okhttp3.Response res = super.proceed(r);
+                    if (r.url().host().startsWith("site.")) return res;
+                    byte[] payload = new byte[declared ? 10 : FixLinkPreviewsPatch.MAX_IMAGE_BYTES + 1];
+                    okhttp3.ResponseBody body = declared
+                            ? okhttp3.ResponseBody.create(payload, okhttp3.MediaType.parse("image/png"))
+                            : new okhttp3.ResponseBody() {   // unknown length, like chunked/gzip
+                                final okio.Buffer buf = new okio.Buffer().write(payload);
+                                @Override public okhttp3.MediaType contentType() { return okhttp3.MediaType.parse("image/png"); }
+                                @Override public long contentLength() { return -1; }
+                                @Override public okio.BufferedSource source() { return buf; }
+                            };
+                    okhttp3.Response.Builder b = res.newBuilder().body(body);
+                    return declared ? b.header("Content-Length", "99999999").build() : b.build();
+                }
+            };
+            boolean failed = false;
+            try { new FixLinkPreviewsPatch().intercept(big); } catch (java.io.IOException e) { failed = e.getMessage().contains("too large"); }
+            check(failed, "preview: image over the size cap is refused (" + key + ")");
+            eq(FixLinkPreviewsPatch.cached("https://site.example/" + key, System.currentTimeMillis()), "", "preview: oversized image cached as no preview (" + key + ")");
+        }
     }
 
     static void redditImageUrls() throws Exception {
