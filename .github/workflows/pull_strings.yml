@@ -5,6 +5,8 @@ on:
 
 jobs:
   pull:
+    # ReVanced-only (Crowdin, release PRs, wrapper bumps); forks skip it.
+    if: github.repository == 'ReVanced/revanced-patches'
     name: Pull strings
     permissions:
       contents: write

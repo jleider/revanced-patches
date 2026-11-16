@@ -11,6 +11,8 @@ env:
 
 jobs:
   pull-request:
+    # ReVanced-only (Crowdin, release PRs, wrapper bumps); forks skip it.
+    if: github.repository == 'ReVanced/revanced-patches'
     name: Open pull request
     runs-on: ubuntu-latest
     steps:
