@@ -42,12 +42,15 @@ val fixGfycatPatch = bytecodePatch(
                     r.definingClass == definingClass && r.parameterTypes == listOf("Ljava/lang/String;") && r.returnType == "V"
                 } == true
             }.getReference<MethodReference>()!!
-            // .locals 6, v0 is dead at entry. Preserve p1 exactly, including query.
+            // .locals 6, v0 is dead at entry. Direct v.redd.it MP4 links (Gfycat archives, shared
+            // DASH links) play the post's HLS playlist like Sync does for other v.redd.it links,
+            // so the audio track is kept. Sync's own id extraction breaks on ".mp4".
+            check(implementation!!.registerCount - parameters.size >= 1) { "ImageViewerFragment.X3 locals changed" }
             addInstructionsWithLabels(0, """
-                invoke-static { p1 }, $EXT->isRedditMp4(Ljava/lang/String;)Z
-                move-result v0
+                invoke-static { p1 }, $EXT->redditHls(Ljava/lang/String;)Ljava/lang/String;
+                move-result-object v0
                 if-eqz v0, :original
-                invoke-direct { p0, p1 }, $play
+                invoke-direct { p0, v0 }, $play
                 return-void
             """, ExternalLabel("original", getInstruction(0)))
         }

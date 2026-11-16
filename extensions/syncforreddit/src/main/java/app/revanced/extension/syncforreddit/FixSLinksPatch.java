@@ -15,7 +15,11 @@ public class FixSLinksPatch extends BaseFixSLinksPatch {
     }
 
     public static boolean patchResolveSLink(String link) {
-        return INSTANCE.resolveSLink(link);
+        // The shared resolver matches ".*reddit\\.com/r/x/s/y" and sends the user's bearer token to
+        // that URL, so "https://evil.example/reddit.com/r/a/s/b" or an http:// link would leak it.
+        // Only hand it canonical HTTPS Reddit share links; anything else takes Sync's normal path.
+        String safe = SLinkGuard.safeSLink(link);
+        return safe != null && INSTANCE.resolveSLink(safe);
     }
 
     public static void patchSetAccessToken(String accessToken) {

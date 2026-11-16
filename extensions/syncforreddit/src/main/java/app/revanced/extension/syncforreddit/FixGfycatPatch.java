@@ -24,6 +24,18 @@ public final class FixGfycatPatch {
                 && "v.redd.it".equalsIgnoreCase(u.getHost())
                 && u.getPath() != null && u.getPath().toLowerCase(Locale.ROOT).endsWith(".mp4");
     }
+    /**
+     * Sync's viewer turns v.redd.it links into {@code /<id>/HLSPlaylist.m3u8}, which carries the audio track,
+     * but its id extraction keeps the ".mp4" of direct DASH/CMAF file links and builds a dead URL.
+     * Returns the HLS playlist for a direct v.redd.it MP4 file link, or null for anything else.
+     */
+    public static String redditHls(String value) {
+        if (!isRedditMp4(value)) return null;
+        String[] parts = uri(value).getPath().split("/");
+        // Expect ["", "<id>", "<DASH_720.mp4>"]
+        if (parts.length != 3 || !parts[1].matches("[A-Za-z0-9]+")) return null;
+        return "https://v.redd.it/" + parts[1] + "/HLSPlaylist.m3u8";
+    }
     private static String image(String value) {
         URI u = uri(value);
         if (u == null || u.getHost() == null || isGfycat(value)

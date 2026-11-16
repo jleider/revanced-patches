@@ -30,8 +30,31 @@ public final class ExtensionHarness {
         loginRedirect();
         previewInterceptor();
         gfycatBlock();
+        sLinkGuard();
+        redditImageUrls();
         System.out.println((failures == 0 ? "PASS" : "FAIL") + ": " + (checks - failures) + "/" + checks + " extension checks");
         if (failures > 0) System.exit(1);
+    }
+
+    static void sLinkGuard() {
+        // The shared /s/ resolver sends the bearer token to whatever URL it is given.
+        eq(SLinkGuard.safeSLink("https://www.reddit.com/r/pics/s/AbC123"), "https://www.reddit.com/r/pics/s/AbC123", "slink: canonical");
+        eq(SLinkGuard.safeSLink("https://reddit.com/r/pics/s/AbC123/"), "https://reddit.com/r/pics/s/AbC123", "slink: bare host, trailing slash");
+        eq(SLinkGuard.safeSLink("http://www.reddit.com/r/pics/s/AbC123"), "https://www.reddit.com/r/pics/s/AbC123", "slink: http upgraded, token never in clear");
+        eq(SLinkGuard.safeSLink("https://www.reddit.com/r/pics/s/AbC123#bypass"), "https://www.reddit.com/r/pics/s/AbC123#bypass", "slink: #bypass kept");
+        eq(SLinkGuard.safeSLink("https://www.reddit.com/r/pics/s/AbC123?utm_source=share"), "https://www.reddit.com/r/pics/s/AbC123?utm_source=share", "slink: query kept");
+        eq(SLinkGuard.safeSLink("https://WWW.Reddit.COM/r/pics/s/AbC123"), "https://www.reddit.com/r/pics/s/AbC123", "slink: host case");
+        eq(SLinkGuard.safeSLink("https://evil.example/x.reddit.com/r/a/s/b"), null, "slink: reddit.com in path of foreign host");
+        eq(SLinkGuard.safeSLink("https://notreddit.com/r/a/s/b"), null, "slink: suffix-lookalike host");
+        eq(SLinkGuard.safeSLink("https://reddit.com.evil.example/r/a/s/b"), null, "slink: prefix-lookalike host");
+        eq(SLinkGuard.safeSLink("https://www.reddit.com@evil.example/r/a/s/b"), null, "slink: userinfo trick");
+        eq(SLinkGuard.safeSLink("https://evil.example/r/a/s/b#.reddit.com/r/a/s/b"), null, "slink: fragment trick");
+        eq(SLinkGuard.safeSLink("https://www.reddit.com:8443/r/a/s/b"), null, "slink: odd port");
+        eq(SLinkGuard.safeSLink("ftp://www.reddit.com/r/a/s/b"), null, "slink: non-http scheme");
+        eq(SLinkGuard.safeSLink("https://www.reddit.com/r/a/s/b/../../x"), null, "slink: extra path");
+        eq(SLinkGuard.safeSLink("https://www.reddit.com/r/pics/comments/abc"), null, "slink: not a share link");
+        eq(SLinkGuard.safeSLink("not a url"), null, "slink: garbage");
+        eq(SLinkGuard.safeSLink(null), null, "slink: null");
     }
 
     static void combinedSubreddits() {
@@ -172,6 +195,22 @@ public final class ExtensionHarness {
         FakeChain pass = new FakeChain("https://i.redd.it/x.jpg", "", "image/jpeg", 200);
         new FixLinkPreviewsPatch().intercept(pass);
         eq(pass.requested, java.util.Collections.singletonList("https://i.redd.it/x.jpg"), "preview interceptor: other images pass through");
+    }
+
+    static void redditImageUrls() throws Exception {
+        String esc = "https://preview.redd.it/z5vaj1j1ks1i1.jpeg?width=140&amp;height=108&amp;auto=webp&amp;s=f06ab17ae849cc7c8530cf3c409eecd1fbd23ff5";
+        String raw = "https://preview.redd.it/z5vaj1j1ks1i1.jpeg?width=140&height=108&auto=webp&s=f06ab17ae849cc7c8530cf3c409eecd1fbd23ff5";
+        FakeChain chain = new FakeChain(esc, "", "image/jpeg", 200);
+        new RedditImageUrlInterceptor().intercept(chain);
+        eq(chain.requested.get(0), raw, "image urls: preview.redd.it &amp; unescaped on the wire");
+        eq(RedditImageUrlInterceptor.fix("https://external-preview.redd.it/a.png?x=1&amp;amp;s=2", "external-preview.redd.it"),
+                "https://external-preview.redd.it/a.png?x=1&s=2", "image urls: double escape");
+        eq(RedditImageUrlInterceptor.fix(raw, "preview.redd.it"), null, "image urls: clean URL untouched");
+        eq(RedditImageUrlInterceptor.fix("https://example.com/a?b=1&amp;c=2", "example.com"), null, "image urls: other hosts untouched");
+        eq(RedditImageUrlInterceptor.fix("https://notredd.it/a?b=1&amp;c=2", "notredd.it"), null, "image urls: lookalike host untouched");
+        FakeChain other = new FakeChain("https://i.imgur.com/a.jpg?x=1&amp;y=2", "", "image/jpeg", 200);
+        new RedditImageUrlInterceptor().intercept(other);
+        check(other.requested.get(0).contains("&amp;"), "image urls: non-Reddit request passed through as is");
     }
 
     static void gfycatBlock() throws Exception {
