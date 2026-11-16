@@ -1,0 +1,16 @@
+{
+  "_comment": "Live Reddit posts used by scripts/e2e/features.py. Posts can be deleted; refresh with a /domain/<host>/top.json query if a scenario starts failing on 'post not found'.",
+  "link_post": "/r/worldnews/comments/1xtenfv/",
+  "imgur_direct": "/r/Damnthatsinteresting/comments/1x93ykl/",
+  "imgur_gif": "/r/Nightreign/comments/1pgzg70/",
+  "imgur_page": "/r/formula1/comments/1p3ce5v/",
+  "imgur_album": "/r/birding/comments/1xxsfbz/",
+  "deviantart": "/r/StarTrekStarships/comments/1p4nry1/",
+  "tenor_selftext": "/r/fallenlondon/comments/1xu5svk/",
+  "imgur_album_selftext": "/r/employedbykohls/comments/1xxg4ow/",
+  "gfycat_with_copy": "/r/gifs/comments/89oo9p/",
+  "gfycat_with_copy_mp4": "0hp59oq3mpr81/DASH_480.mp4",
+  "gfycat_without_copy": "/r/gifs/comments/7s6y7w/",
+  "reddit_video_with_audio": "h3m7jsx8es1i1",
+  "http_tenor_selftext": "/r/tipofmytongue/comments/1vhozd3/"
+}

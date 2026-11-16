@@ -1,0 +1,9 @@
+# Local working data: never committed. Bring your own Sync APK (see README).
+/apk/
+/decompiled/
+/out/
+/tools/
+/secrets.env
+/.venv/
+__pycache__/
+*.pyc
