@@ -35,10 +35,16 @@ publishing {
     repositories {
         maven {
             name = "githubPackages"
-            url = uri("https://maven.pkg.github.com/revanced/revanced-patches")
+            // Forks publish to their own GitHub Packages; ReVanced's CI still publishes to revanced/revanced-patches.
+            url = uri("https://maven.pkg.github.com/${System.getenv("GITHUB_REPOSITORY") ?: "revanced/revanced-patches"}")
             credentials(PasswordCredentials::class)
         }
     }
 }
 
 apply(from = "strings-processing.gradle.kts")
+
+// Signing needs ReVanced's GPG key. Builds without one (forks, local builds) skip signing instead of failing.
+tasks.withType<Sign>().configureEach {
+    onlyIf { System.getenv("HAS_GPG_KEY") != "false" }
+}

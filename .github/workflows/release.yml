@@ -7,6 +7,9 @@ on:
       - main
       - dev
 
+env:
+  HAS_GPG_KEY: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+
 jobs:
   release:
     name: Release
@@ -46,6 +49,8 @@ jobs:
         run: npm install
 
       - name: Import GPG key
+        # Forks without ReVanced's signing key still publish an unsigned .rvp release.
+        if: ${{ env.HAS_GPG_KEY == 'true' }}
         uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
