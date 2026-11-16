@@ -278,6 +278,9 @@ public final class ExtensionHarness {
         eq(YouTubeWebPlayer.startSeconds("https://www.youtube.com/watch?v=x&t=1m30s"), 90, "youtube: t=1m30s");
         eq(YouTubeWebPlayer.startSeconds("https://www.youtube.com/watch?v=x&t=1h2m3s"), 3723, "youtube: t=1h2m3s");
         eq(YouTubeWebPlayer.startSeconds("https://www.youtube.com/watch?v=x"), 0, "youtube: no start");
+        eq(YouTubeWebPlayer.startSeconds("https://youtu.be/K3elJwmxsRA?t=2147483648"), 86400, "youtube: int overflow doesn't crash (capped)");
+        eq(YouTubeWebPlayer.startSeconds("https://youtu.be/K3elJwmxsRA?t=99999999999999999999999"), 0, "youtube: absurd t ignored");
+        eq(YouTubeWebPlayer.startSeconds("https://youtu.be/K3elJwmxsRA?t=99999999999h"), 86400, "youtube: huge hours capped");
         String page = YouTubeWebPlayer.html("K3elJwmxsRA", 90);
         check(page.contains("videoId:'K3elJwmxsRA'") && page.contains("start:90") && page.contains("origin:'https://www.reddit.com'"), "youtube: embed page carries id, start and origin");
     }

@@ -47,20 +47,27 @@ public final class YouTubeWebPlayer {
         return m.find() ? m.group(1) : null;
     }
 
-    /** Start offset in seconds from t=/start= (90, 1m30s, 1h2m3s), or 0. */
+    /** Start offset in seconds from t=/start= (90, 1m30s, 1h2m3s), or 0; never throws, capped at a day. */
     static int startSeconds(String url) {
         if (url == null) return 0;
         Matcher m = T.matcher(url.replace("&amp;", "&"));
         if (!m.find()) return 0;
         String t = m.group(1).toLowerCase(Locale.ROOT);
-        if (t.matches("\\d+")) return Integer.parseInt(t);
-        int total = 0;
-        Matcher part = Pattern.compile("(\\d+)([hms])").matcher(t);
-        while (part.find()) {
-            int n = Integer.parseInt(part.group(1));
-            total += part.group(2).equals("h") ? n * 3600 : part.group(2).equals("m") ? n * 60 : n;
+        long total = 0;
+        try {
+            if (t.matches("\\d+")) {
+                total = Long.parseLong(t);
+            } else {
+                Matcher part = Pattern.compile("(\\d+)([hms])").matcher(t);
+                while (part.find()) {
+                    long n = Long.parseLong(part.group(1));
+                    total += part.group(2).equals("h") ? n * 3600 : part.group(2).equals("m") ? n * 60 : n;
+                }
+            }
+        } catch (NumberFormatException e) {
+            return 0;   // absurd values (more digits than a long): start at the beginning
         }
-        return total;
+        return (int) Math.max(0, Math.min(total, 86_400));
     }
 
     /** The page hosting the IFrame player. Errors are reported through console messages (no JS bridge). */
@@ -69,7 +76,7 @@ public final class YouTubeWebPlayer {
                 + "<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#p{width:100%;height:100%}</style>"
                 + "</head><body><div id=p></div><script>"
                 + "var tag=document.createElement('script');tag.src='https://www.youtube.com/iframe_api';document.head.appendChild(tag);"
-                + "function onYouTubeIframeAPIReady(){new YT.Player('p',{videoId:'" + id + "',"
+                + "function onYouTubeIframeAPIReady(){window.player=new YT.Player('p',{videoId:'" + id + "',"
                 + "playerVars:{autoplay:1,playsinline:1,rel:0,fs:1,start:" + start + ",origin:'https://www.reddit.com'},"
                 + "events:{onReady:function(e){e.target.playVideo();},"
                 + "onError:function(e){console.log('" + ERROR_TAG + "'+e.data);}}});}"
@@ -82,6 +89,16 @@ public final class YouTubeWebPlayer {
             return !activity.getPackageManager().queryIntentServices(intent, 0).isEmpty();
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    /** Lifecycle state shared by the clients: fallbacks fire once, and only while the screen is in front. */
+    static final class State {
+        boolean resumed = true;
+        boolean done;   // fallback taken or activity destroyed
+
+        boolean mayLeave(Activity activity) {
+            return !done && resumed && !activity.isFinishing() && !activity.isDestroyed();
         }
     }
 
@@ -105,6 +122,7 @@ public final class YouTubeWebPlayer {
         String id = videoId(url);
         if (id == null) return false;   // Sync shows "Invalid ID"
 
+        State state = new State();
         FrameLayout root = new FrameLayout(activity);
         root.setBackgroundColor(Color.BLACK);
         WebView web = new WebView(activity);
@@ -121,7 +139,10 @@ public final class YouTubeWebPlayer {
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 // Links inside the player (title, "Watch on YouTube", channel) leave Sync.
                 if (request.isForMainFrame()) {
-                    openExternally(activity, request.getUrl().toString());
+                    if (state.mayLeave(activity)) {
+                        state.done = true;
+                        openExternally(activity, request.getUrl().toString());
+                    }
                     return true;
                 }
                 return false;
@@ -157,7 +178,11 @@ public final class YouTubeWebPlayer {
                 String text = message.message();
                 if (text != null && text.startsWith(ERROR_TAG)) {
                     // 2 bad id, 5 HTML5 error, 100 not found/private, 101/150/153 embedding not allowed.
-                    openExternally(activity, url);
+                    // Only while the user is still on this screen, and only once.
+                    if (state.mayLeave(activity)) {
+                        state.done = true;
+                        openExternally(activity, url);
+                    }
                     return true;
                 }
                 return false;
@@ -168,19 +193,34 @@ public final class YouTubeWebPlayer {
         activity.setContentView(root);
         activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         web.loadDataWithBaseURL("https://www.reddit.com/", html(id, startSeconds(url)), "text/html", "utf-8", null);
-        tieToLifecycle(activity, web);
+        tieToLifecycle(activity, web, state);
         return true;
     }
 
     /** Pause with the activity and destroy with it, so audio never outlives the screen. */
-    private static void tieToLifecycle(Activity activity, WebView web) {
+    private static void tieToLifecycle(Activity activity, WebView web, State state) {
         Application app = activity.getApplication();
         app.registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks() {
-            @Override public void onActivityPaused(Activity a) { if (a == activity) web.onPause(); }
-            @Override public void onActivityResumed(Activity a) { if (a == activity) web.onResume(); }
+            @Override public void onActivityPaused(Activity a) {
+                if (a != activity) return;
+                state.resumed = false;
+                // WebView.onPause doesn't stop JavaScript; pause the video through the player API too.
+                web.evaluateJavascript("window.player&&window.player.pauseVideo&&window.player.pauseVideo()", null);
+                web.onPause();
+            }
+            @Override public void onActivityResumed(Activity a) {
+                if (a != activity) return;
+                state.resumed = true;
+                web.onResume();
+            }
             @Override public void onActivityDestroyed(Activity a) {
                 if (a != activity) return;
+                state.done = true;
                 app.unregisterActivityLifecycleCallbacks(this);
+                // Detach callbacks before tearing down, so late page events can't reach a dead activity.
+                web.setWebChromeClient(null);
+                web.setWebViewClient(new WebViewClient());
+                web.stopLoading();
                 web.loadUrl("about:blank");
                 web.destroy();
             }
