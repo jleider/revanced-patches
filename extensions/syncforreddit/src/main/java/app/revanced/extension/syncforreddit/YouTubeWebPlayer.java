@@ -13,14 +13,23 @@ import android.view.WindowManager;
 import android.webkit.ConsoleMessage;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 
 /**
  * In-app YouTube playback without the YouTube Android Player API (removed from current YouTube apps).
@@ -28,6 +37,11 @@ import java.util.regex.Pattern;
  * embed player. The page is loaded with a reddit.com base URL, so the embed receives a Referer/origin
  * (YouTube refuses embeds without one, "error 153"). Fullscreen uses WebChromeClient.onShowCustomView.
  * Videos whose owner disabled embedding (IFrame API errors 101/150/153) open in the YouTube app.
+ * <p>
+ * With "Block YouTube ads" (patch option, default on) the embed page itself is the main document:
+ * it is fetched here with the reddit.com referer, its CSP header is dropped and a script is injected
+ * that removes ad placements from the player data (initial response, fetch and JSON.parse), so the
+ * player has no ads to show; requests to ad and ad-tracking hosts are refused as a backstop.
  *
  * @noinspection unused
  */
@@ -38,7 +52,103 @@ public final class YouTubeWebPlayer {
             "(?:youtube\\.com/(?:watch\\?(?:.*&)?v=|embed/|shorts/|live/|v/)|youtu\\.be/|youtube-nocookie\\.com/embed/)([A-Za-z0-9_-]{11})");
     private static final Pattern T = Pattern.compile("[?&#](?:t|start|time_continue)=([0-9hms]+)");
 
+    private static final String REFERER = "https://www.reddit.com/";
+    private static volatile OkHttpClient client;
+
     private YouTubeWebPlayer() {}
+
+    /** Replaced at patch time with the "Block YouTube ads" option. */
+    public static boolean blockAds() {
+        return true;
+    }
+
+    /** Injected first into the embed page (same origin as the player): strip ads, report errors. */
+    static final String AD_SCRIPT = "(function(){"
+            + "var K=['adPlacements','playerAds','adSlots','adBreakHeartbeatParams','adBreakParams'];"
+            + "function s(o){try{if(o&&typeof o==='object'){for(var i=0;i<K.length;i++){if(K[i] in o){delete o[K[i]];console.log('SYNC_YT_AD_REMOVED:'+K[i]);}}"
+            + "if(o.playerResponse)s(o.playerResponse);}}catch(e){}return o;}"
+            + "var P=JSON.parse;JSON.parse=function(){return s(P.apply(this,arguments));};"
+            + "var R;try{Object.defineProperty(window,'ytInitialPlayerResponse',{configurable:true,"
+            + "get:function(){return R;},set:function(v){R=s(v);}});}catch(e){}"
+            + "var F=window.fetch;if(F){window.fetch=function(){var a=arguments;return F.apply(this,a).then(function(r){"
+            + "try{var u=(a[0]&&a[0].url)||String(a[0]);if(/\\/youtubei\\/v1\\/player/.test(u)){"
+            + "return r.clone().json().then(function(j){return new Response(JSON.stringify(s(j)),"
+            + "{status:r.status,statusText:r.statusText,headers:r.headers});}).catch(function(){return r;});}}catch(e){}"
+            + "return r;});};}"
+            + "var t=setInterval(function(){var p=document.getElementById('movie_player');"
+            + "if(p&&p.addEventListener){clearInterval(t);p.addEventListener('onError',function(e){console.log('" + "SYNC_YT_ERROR:" + "'+e);});"
+            + "if(p.playVideo)p.playVideo();}},300);"
+            + "})();";
+
+    /** The embed page URL for the main-document (ad-free) mode. */
+    static String embedUrl(String id, int start) {
+        return "https://www.youtube.com/embed/" + id + "?autoplay=1&playsinline=1&rel=0&fs=1&enablejsapi=1&start=" + start
+                + "&origin=https%3A%2F%2Fwww.reddit.com";
+    }
+
+    /** Puts the ad script before any of the page's own scripts. */
+    static String inject(String html) {
+        String tag = "<script>" + AD_SCRIPT + "</script>";
+        int head = html.toLowerCase(Locale.ROOT).indexOf("<head");
+        if (head >= 0) {
+            int end = html.indexOf('>', head);
+            if (end > 0) return html.substring(0, end + 1) + tag + html.substring(end + 1);
+        }
+        return tag + html;
+    }
+
+    /** Ad serving and ad tracking requests (never the video itself). */
+    static boolean isAdRequest(String host, String path) {
+        if (host == null) return false;
+        host = host.toLowerCase(Locale.ROOT);
+        path = path == null ? "" : path;
+        if (host.endsWith("doubleclick.net") || host.endsWith("googlesyndication.com")
+                || host.endsWith("googleadservices.com") || host.equals("imasdk.googleapis.com")) return true;
+        boolean yt = host.equals("youtube.com") || host.endsWith(".youtube.com");
+        return yt && (path.startsWith("/pagead/") || path.startsWith("/api/stats/ads") || path.startsWith("/ptracking")
+                || path.startsWith("/get_midroll_info") || path.startsWith("/pcs/activeview")
+                || path.startsWith("/youtubei/v1/player/ad_break"));
+    }
+
+    static boolean isEmbedPage(Uri url) {
+        return "https".equals(url.getScheme()) && "www.youtube.com".equals(url.getHost())
+                && url.getPath() != null && url.getPath().startsWith("/embed/");
+    }
+
+    private static OkHttpClient client() {
+        if (client == null) {
+            synchronized (YouTubeWebPlayer.class) {
+                if (client == null) client = new OkHttpClient();
+            }
+        }
+        return client;
+    }
+
+    private static WebResourceResponse empty() {
+        return new WebResourceResponse("text/plain", "utf-8", 204, "No Content", new HashMap<>(), new ByteArrayInputStream(new byte[0]));
+    }
+
+    /** Fetches the embed page with the reddit.com referer and returns it with the ad script injected. */
+    private static WebResourceResponse injectedEmbedPage(String url, String userAgent) {
+        try (Response r = client().newCall(new Request.Builder().url(url)
+                .header("Referer", REFERER).header("User-Agent", userAgent).build()).execute()) {
+            if (r.body() == null) return null;
+            String html = inject(r.body().string());
+            android.util.Log.i("SyncYouTube", "ad-free embed page loaded (" + r.code() + ")");
+            Map<String, String> headers = new HashMap<>();
+            for (String name : r.headers().names()) {
+                String n = name.toLowerCase(Locale.ROOT);
+                if (n.startsWith("content-security-policy") || n.equals("content-length") || n.equals("content-encoding")
+                        || n.equals("transfer-encoding") || n.equals("content-type")) continue;
+                headers.put(name, r.header(name));
+            }
+            String reason = r.message().isEmpty() ? "OK" : r.message();
+            return new WebResourceResponse("text/html", "utf-8", r.code(), reason, headers,
+                    new ByteArrayInputStream(html.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception e) {
+            return null;   // let the WebView load it normally (with ads)
+        }
+    }
 
     /** The 11-character video id of a YouTube URL, or null. */
     static String videoId(String url) {
@@ -134,7 +244,19 @@ public final class YouTubeWebPlayer {
         s.setAllowFileAccess(false);
         s.setAllowContentAccess(false);
 
+        boolean adFree = blockAds();
+        String userAgent = s.getUserAgentString();
         web.setWebViewClient(new WebViewClient() {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                if (!adFree) return null;
+                Uri u = request.getUrl();
+                if (isAdRequest(u.getHost(), u.getPath())) return empty();
+                if (request.isForMainFrame() && "GET".equals(request.getMethod()) && isEmbedPage(u))
+                    return injectedEmbedPage(u.toString(), userAgent);
+                return null;
+            }
+
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 // Links inside the player (title, "Watch on YouTube", channel) leave Sync.
@@ -192,7 +314,13 @@ public final class YouTubeWebPlayer {
         root.addView(web, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         activity.setContentView(root);
         activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        web.loadDataWithBaseURL("https://www.reddit.com/", html(id, startSeconds(url)), "text/html", "utf-8", null);
+        if (adFree) {
+            Map<String, String> referer = new HashMap<>();
+            referer.put("Referer", REFERER);
+            web.loadUrl(embedUrl(id, startSeconds(url)), referer);
+        } else {
+            web.loadDataWithBaseURL(REFERER, html(id, startSeconds(url)), "text/html", "utf-8", null);
+        }
         tieToLifecycle(activity, web, state);
         return true;
     }

@@ -445,6 +445,12 @@ def youtube_in_app(c):
     hosts = " ".join(c.hosts())
     c.expect("googlevideo.com" in hosts, f"no video stream from googlevideo.com (embed not playing): {hosts[:200]}")
     c.expect_playing(audio=True)
+    # "Block YouTube ads" (default on): the embed page must be the injected, ad-free one. Removed ad
+    # fields are logged (informational: whether a video has ads at all varies).
+    log = c.log()
+    c.expect("ad-free embed page loaded" in log, "the ad-free embed page was not used")
+    removed = sorted(set(re.findall(r"SYNC_YT_AD_REMOVED:(\w+)", log)))
+    print(f"  youtube_in_app: ad fields removed: {removed or 'none (video had no ads)'}")
 
 
 @scenario

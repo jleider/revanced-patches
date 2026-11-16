@@ -283,6 +283,20 @@ public final class ExtensionHarness {
         eq(YouTubeWebPlayer.startSeconds("https://youtu.be/K3elJwmxsRA?t=99999999999h"), 86400, "youtube: huge hours capped");
         String page = YouTubeWebPlayer.html("K3elJwmxsRA", 90);
         check(page.contains("videoId:'K3elJwmxsRA'") && page.contains("start:90") && page.contains("origin:'https://www.reddit.com'"), "youtube: embed page carries id, start and origin");
+        // Ad blocking
+        check(YouTubeWebPlayer.isAdRequest("googleads.g.doubleclick.net", "/pagead/id"), "youtube ads: doubleclick");
+        check(YouTubeWebPlayer.isAdRequest("www.youtube.com", "/pagead/adview"), "youtube ads: /pagead/");
+        check(YouTubeWebPlayer.isAdRequest("www.youtube.com", "/api/stats/ads"), "youtube ads: ad stats");
+        check(YouTubeWebPlayer.isAdRequest("www.youtube.com", "/get_midroll_info"), "youtube ads: midroll");
+        check(!YouTubeWebPlayer.isAdRequest("rr3---sn-x.googlevideo.com", "/videoplayback"), "youtube ads: the video stream is never blocked");
+        check(!YouTubeWebPlayer.isAdRequest("www.youtube.com", "/youtubei/v1/player"), "youtube ads: player request itself allowed (ads stripped from it)");
+        check(!YouTubeWebPlayer.isAdRequest("www.youtube.com", "/embed/K3elJwmxsRA"), "youtube ads: embed page allowed");
+        check(!YouTubeWebPlayer.isAdRequest("notdoubleclick.example", "/"), "youtube ads: unrelated host");
+        String injected = YouTubeWebPlayer.inject("<!DOCTYPE html><html><head><script nonce=x>player()</script></head></html>");
+        check(injected.indexOf("adPlacements") < injected.indexOf("player()") && injected.indexOf("<head>") < injected.indexOf("adPlacements"), "youtube ads: script injected first in <head>");
+        check(YouTubeWebPlayer.inject("<p>no head</p>").startsWith("<script>"), "youtube ads: injected without <head> too");
+        check(YouTubeWebPlayer.embedUrl("K3elJwmxsRA", 90).startsWith("https://www.youtube.com/embed/K3elJwmxsRA?") && YouTubeWebPlayer.embedUrl("K3elJwmxsRA", 90).contains("start=90"), "youtube ads: embed URL");
+        check(YouTubeWebPlayer.AD_SCRIPT.contains("/youtubei\\/v1\\/player/") , "youtube ads: player-response regex escaped for JS");
     }
 
     static void redgifsInfo() throws Exception {

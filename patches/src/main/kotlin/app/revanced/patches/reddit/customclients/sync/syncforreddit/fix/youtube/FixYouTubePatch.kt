@@ -3,7 +3,9 @@ package app.revanced.patches.reddit.customclients.sync.syncforreddit.fix.youtube
 import app.revanced.patcher.*
 import app.revanced.patcher.extensions.*
 import app.revanced.patcher.patch.BytecodePatchContext
+import app.revanced.patcher.patch.booleanOption
 import app.revanced.patcher.patch.bytecodePatch
+import app.revanced.util.returnEarly
 import app.revanced.patches.reddit.customclients.sync.syncforreddit.extension.sharedExtensionPatch
 
 private const val RESULT = "Lcom/google/android/youtube/player/YouTubeInitializationResult;"
@@ -25,6 +27,11 @@ internal val BytecodePatchContext.playerSetupMethodMatch by composingFirstMethod
     custom { immutableClassDef.sourceFile == "CustomYouTubeVideoActivity.java" && name != "onActivityResult" }
 }
 
+internal val BytecodePatchContext.blockAdsMethod by gettingFirstMethodDeclaratively {
+    definingClass("Lapp/revanced/extension/syncforreddit/YouTubeWebPlayer;")
+    name("blockAds")
+}
+
 @Suppress("unused")
 val fixYouTubePatch = bytecodePatch(
     name = "Fix YouTube player",
@@ -33,7 +40,16 @@ val fixYouTubePatch = bytecodePatch(
 ) {
     dependsOn(sharedExtensionPatch)
     compatibleWith("com.laurencedawson.reddit_sync", "com.laurencedawson.reddit_sync.pro", "com.laurencedawson.reddit_sync.dev")
+
+    val blockAds by booleanOption(
+        name = "Block YouTube ads",
+        default = true,
+        description = "Removes ads from videos played in Sync's YouTube player. Ads YouTube stitches into the video stream itself can still appear.",
+        required = false,
+    )
+
     apply {
+        blockAdsMethod.returnEarly(blockAds != false)
         playerSetupMethodMatch.method.apply {
             // v0 is free at entry. If YouTube's player service is missing, the web player takes over the
             // activity and Google's player is never initialized.
