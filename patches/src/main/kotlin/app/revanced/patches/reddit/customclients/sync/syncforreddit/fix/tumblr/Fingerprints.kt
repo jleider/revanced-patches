@@ -1,13 +1,20 @@
 package app.revanced.patches.reddit.customclients.sync.syncforreddit.fix.tumblr
 
-import app.revanced.patcher.*
+import app.revanced.patcher.composingFirstMethod
+import app.revanced.patcher.custom
+import app.revanced.patcher.immutableClassDef
+import app.revanced.patcher.instructions
+import app.revanced.patcher.invoke
+import app.revanced.patcher.name
+import app.revanced.patcher.parameterTypes
 import app.revanced.patcher.patch.BytecodePatchContext
+import app.revanced.patcher.returnType
 
-// TumblrRequest's URL builder (r8.j.a(String) in v23.06.30): api.tumblr.com/v2 with a revoked key.
+// TumblrRequest's URL builder: api.tumblr.com/v2 with a revoked key.
 internal val BytecodePatchContext.tumblrUrlMethodMatch by composingFirstMethod {
     returnType("Ljava/lang/String;")
     parameterTypes("Ljava/lang/String;")
-    instructions(string { equals("https://api.tumblr.com/v2/blog/") })
+    instructions("https://api.tumblr.com/v2/blog/"())
     custom { immutableClassDef.sourceFile == "TumblrRequest.java" }
 }
 
@@ -16,6 +23,6 @@ internal val BytecodePatchContext.tumblrParseMethodMatch by composingFirstMethod
     name("parseNetworkResponse")
     returnType("Lcom/android/volley/Response;")
     parameterTypes("Lcom/android/volley/NetworkResponse;")
-    instructions(string { equals("photos") })
+    instructions("photos"())
     custom { immutableClassDef.sourceFile == "TumblrRequest.java" }
 }

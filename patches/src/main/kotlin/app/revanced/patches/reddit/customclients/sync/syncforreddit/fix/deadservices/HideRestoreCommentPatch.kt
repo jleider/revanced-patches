@@ -4,8 +4,10 @@ import app.revanced.patcher.extensions.addInstruction
 import app.revanced.patcher.extensions.getInstruction
 import app.revanced.patcher.patch.PatchException
 import app.revanced.patcher.patch.bytecodePatch
+import app.revanced.util.getReference
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
+import com.android.tools.smali.dexlib2.iface.reference.StringReference
 
 @Suppress("unused")
 val hideRestoreCommentPatch = bytecodePatch(
@@ -25,7 +27,7 @@ val hideRestoreCommentPatch = bytecodePatch(
         commentActionsMethodMatch.method.apply {
             val instructions = implementation!!.instructions.toList()
             val labelIndex = instructions.indices.firstOrNull { i ->
-                instructions[i].stringValue() == "Restore comment" &&
+                instructions[i].getReference<StringReference>()?.string == "Restore comment" &&
                     (1..3).any { back -> i - back >= 0 && instructions[i - back].opcode == Opcode.NEW_INSTANCE }
             } ?: throw PatchException("Restore comment item not found")
             val newInstanceIndex = (labelIndex - 1 downTo 0).first { instructions[it].opcode == Opcode.NEW_INSTANCE }

@@ -16,13 +16,13 @@ import org.json.JSONObject;
 public final class FixGalleryPatch {
     private static final String INFO_URL = "https://oauth.reddit.com/api/info.json?id=t3_";
 
-    /** https://oauth.reddit.com/api/info.json?id=t3_ID -> https://oauth.reddit.com/comments/ID?limit=1&depth=0 */
+    /** Rewrites a single-post API lookup to the corresponding comments listing. */
     public static String rewriteGalleryUrl(String url) {
         if (url == null || !url.startsWith(INFO_URL)) return url;
         String id = url.substring(INFO_URL.length());
         int end = indexOfAny(id, '?', '#');
         if (end >= 0) id = id.substring(0, end);
-        if (!id.matches("[a-zA-Z0-9]+")) return url;   // not a single post id: leave it to Sync
+        if (!id.matches("[a-zA-Z0-9]+")) return url;   // Leave links without a single post ID to Sync.
         return "https://oauth.reddit.com/comments/" + id + "?limit=1&depth=0";
     }
 

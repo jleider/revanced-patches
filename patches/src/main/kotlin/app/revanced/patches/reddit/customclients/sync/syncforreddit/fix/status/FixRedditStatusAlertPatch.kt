@@ -4,6 +4,7 @@ import app.revanced.patcher.extensions.addInstructions
 import app.revanced.patcher.extensions.getInstruction
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.reddit.customclients.sync.syncforreddit.extension.sharedExtensionPatch
+import app.revanced.util.indexOfFirstInstructionReversedOrThrow
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 
@@ -44,7 +45,7 @@ val fixRedditStatusAlertPatch = bytecodePatch(
         )
 
         statusMessageMethodMatch.method.apply {
-            val index = implementation!!.instructions.indexOfLast { it.opcode == Opcode.RETURN_OBJECT }
+            val index = indexOfFirstInstructionReversedOrThrow(Opcode.RETURN_OBJECT)
             val register = getInstruction<OneRegisterInstruction>(index).registerA
             addInstructions(
                 index,

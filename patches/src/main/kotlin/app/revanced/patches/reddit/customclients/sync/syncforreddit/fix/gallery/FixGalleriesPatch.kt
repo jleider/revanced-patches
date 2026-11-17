@@ -1,30 +1,29 @@
 package app.revanced.patches.reddit.customclients.sync.syncforreddit.fix.gallery
 
+import app.revanced.com.android.tools.smali.dexlib2.mutable.MutableMethod
 import app.revanced.patcher.extensions.addInstructions
 import app.revanced.patcher.extensions.getInstruction
 import app.revanced.patcher.patch.PatchException
-import app.revanced.com.android.tools.smali.dexlib2.mutable.MutableMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.reddit.customclients.sync.syncforreddit.extension.sharedExtensionPatch
+import app.revanced.util.getReference
+import app.revanced.util.indexOfFirstInstructionOrThrow
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.Method
 import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.Instruction
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
-import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 
 private const val EXTENSION_CLASS_DESCRIPTOR = "Lapp/revanced/extension/syncforreddit/FixGalleryPatch;"
-private const val UNWRAP = "$EXTENSION_CLASS_DESCRIPTOR->unwrapPostListing(Ljava/lang/String;)Ljava/lang/String;"
+private const val UNWRAP_POST_LISTING_METHOD_DESCRIPTOR = "$EXTENSION_CLASS_DESCRIPTOR->unwrapPostListing(Ljava/lang/String;)Ljava/lang/String;"
 
-private fun Instruction.methodRef() = ((this as? ReferenceInstruction)?.reference as? MethodReference)
-
-private fun Instruction.isStringFromBytes() = opcode == Opcode.INVOKE_DIRECT && methodRef()?.let {
+private fun Instruction.isStringFromBytes() = opcode == Opcode.INVOKE_DIRECT && getReference<MethodReference>()?.let {
     it.definingClass == "Ljava/lang/String;" && it.name == "<init>" &&
         it.parameterTypes.map(CharSequence::toString) == listOf("[B")
 } == true
 
-private fun Instruction.invokes(target: Method) = methodRef()?.let {
+private fun Instruction.invokes(target: Method) = getReference<MethodReference>()?.let {
     it.definingClass == target.definingClass && it.name == target.name &&
         it.parameterTypes.map(CharSequence::toString) == target.parameterTypes.map(CharSequence::toString)
 } == true
@@ -68,7 +67,7 @@ val fixGalleriesPatch = bytecodePatch(
             method.addInstructions(
                 index + 1,
                 """
-                    invoke-static { v$register }, $UNWRAP
+                    invoke-static { v$register }, $UNWRAP_POST_LISTING_METHOD_DESCRIPTOR
                     move-result-object v$register
                 """,
             )
@@ -76,8 +75,7 @@ val fixGalleriesPatch = bytecodePatch(
 
         // 2. Unwrap the [post, comments] array in the parser.
         galleryParseMethodMatch.method.apply {
-            val index = implementation!!.instructions.indexOfFirst { it.isStringFromBytes() }
-            if (index < 0) throw PatchException("String(byte[]) not found in gallery parser")
+            val index = indexOfFirstInstructionOrThrow { isStringFromBytes() }
             unwrapAfter(this, index)
         }
 

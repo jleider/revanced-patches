@@ -1,18 +1,26 @@
 package app.revanced.patches.reddit.customclients.sync.syncforreddit.fix.status
 
-import app.revanced.patcher.*
+import app.revanced.patcher.composingFirstMethod
+import app.revanced.patcher.custom
+import app.revanced.patcher.immutableClassDef
+import app.revanced.patcher.instructions
+import app.revanced.patcher.invoke
+import app.revanced.patcher.name
+import app.revanced.patcher.parameterTypes
 import app.revanced.patcher.patch.BytecodePatchContext
+import app.revanced.patcher.returnType
+import app.revanced.patcher.string
 
-// RedditStatusRequest.parseNetworkResponse (r8.f in v23.06.30): reads reddit.statuspage.io incidents.
+// RedditStatusRequest.parseNetworkResponse: reads reddit.statuspage.io incidents.
 internal val BytecodePatchContext.statusParseMethodMatch by composingFirstMethod {
     name("parseNetworkResponse")
     returnType("Lcom/android/volley/Response;")
     parameterTypes("Lcom/android/volley/NetworkResponse;")
-    instructions(string { equals("incidents") })
+    instructions("incidents"())
     custom { immutableClassDef.sourceFile == "RedditStatusRequest.java" }
 }
 
-// RedditIsDownAlertDialogBottomSheet's message (t9.q1.v4()).
+// Builds the Reddit outage alert message.
 internal val BytecodePatchContext.statusMessageMethodMatch by composingFirstMethod {
     returnType("Ljava/lang/String;")
     parameterTypes()

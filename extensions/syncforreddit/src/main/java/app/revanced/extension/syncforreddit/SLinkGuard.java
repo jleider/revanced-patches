@@ -6,7 +6,7 @@ public final class SLinkGuard {
 
     /**
      * Returns {@code https://<host>/r/<sub>/s/<id>[#bypass]} for an http(s) link on reddit.com or a
-     * subdomain with exactly that path, or null. http is upgraded so the token never goes out in clear.
+     * subdomain with exactly that path, or null. HTTP is upgraded so the token is never sent in clear text.
      */
     public static String safeSLink(String link) {
         if (link == null) return null;

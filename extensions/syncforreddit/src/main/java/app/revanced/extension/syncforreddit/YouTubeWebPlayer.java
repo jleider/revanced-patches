@@ -81,7 +81,7 @@ public final class YouTubeWebPlayer {
             + "if(!shown){shown=1;console.log('SYNC_YT_WAIT_NOTICE');}},250);";
 
     /**
-     * Injected first into the embed page (same origin as the player): strip ads, report errors.
+     * Removes ads and reports errors from the player's origin when injected first into the embed page.
      * When ads were removed, YouTube's server withholds the video for roughly the length of the
      * skipped ad (~10 s). A notice with a seconds counter then explains the stalled spinner; it
      * shows only while the video is not advancing (never when paused, ended or cued) and hides as

@@ -56,6 +56,7 @@ Emulator: AVD `sync34` (Android 14, arm64, rootable). Boot it headless with `emu
 
 ## Rules
 
+- Follow `STYLE.md` (the upstream maintainer's style, with cited reviews) for all patch code.
 - Fingerprint on stable things: `immutableClassDef.sourceFile == "OriginalName.java"` and string literals. Never on obfuscated names like `y8.f`.
 - No third-party API keys in patches, and no new third-party API dependencies. Prefer Reddit-only, direct-CDN or public-page solutions (e.g. Imgur albums use the public embed page).
 - "Enable debug logging" is for test builds only (logs can contain tokens).

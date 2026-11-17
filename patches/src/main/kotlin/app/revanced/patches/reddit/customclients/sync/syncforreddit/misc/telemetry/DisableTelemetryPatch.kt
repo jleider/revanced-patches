@@ -12,7 +12,7 @@ import org.w3c.dom.Element
  * Firebase SDKs at startup (DataCollectionArbiter, measurement zzag) and stop all collection.
  * The "hmmm" Firebase callable (username, country, purchase token, installer) is cut at its sender.
  */
-private val FLAGS = mapOf(
+private val collectionFlags = mapOf(
     "firebase_crashlytics_collection_enabled" to "false",
     "firebase_analytics_collection_enabled" to "false",
     "firebase_analytics_collection_deactivated" to "true",
@@ -47,7 +47,7 @@ val disableTelemetryPatch = resourcePatch(
                     .filter { it.parentNode == application }
                     .associateBy { it.getAttribute("android:name") }
             }
-            FLAGS.forEach { (name, value) ->
+            collectionFlags.forEach { (name, value) ->
                 val node = existing[name] ?: document.createElement("meta-data").also {
                     it.setAttribute("android:name", name)
                     application.appendChild(it)

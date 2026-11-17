@@ -3,7 +3,7 @@ package app.revanced.patches.reddit.customclients.sync.syncforreddit.fix.duplica
 import app.revanced.patcher.extensions.addInstructions
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.reddit.customclients.sync.syncforreddit.extension.sharedExtensionPatch
-import app.revanced.patches.reddit.customclients.sync.syncforreddit.fix.multisub.redditRequestConstructorMatch
+import app.revanced.patches.reddit.customclients.sync.syncforreddit.fix.multisub.redditRequestConstructorMethodMatch
 
 private const val EXTENSION_CLASS_DESCRIPTOR = "Lapp/revanced/extension/syncforreddit/FixOtherDiscussionsPatch;"
 
@@ -23,7 +23,7 @@ val fixOtherDiscussionsPatch = bytecodePatch(
     apply {
         // RedditRequest(Context, int, String url, ...): p3 is the URL. The rewritten URL is on
         // oauth.reddit.com, so OAuthPostsRequest.getHeaders() no longer strips the bearer token.
-        redditRequestConstructorMatch.method.addInstructions(
+        redditRequestConstructorMethodMatch.method.addInstructions(
             0,
             """
                 invoke-static { p3 }, $EXTENSION_CLASS_DESCRIPTOR->rewriteUrl(Ljava/lang/String;)Ljava/lang/String;

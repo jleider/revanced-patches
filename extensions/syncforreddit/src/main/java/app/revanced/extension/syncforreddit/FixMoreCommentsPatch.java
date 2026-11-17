@@ -77,7 +77,7 @@ public final class FixMoreCommentsPatch {
         return convertListing(body, params.get("children"));
     }
 
-    /** Public for the standalone JVM fixture harness. No Android dependencies. */
+    /** Converts a response without Android dependencies so it can also be tested with JVM fixtures. */
     public static String convertListing(String body, String encoded) {
         try {
             if (encoded == null) return body;

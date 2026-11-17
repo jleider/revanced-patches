@@ -25,6 +25,9 @@ project, its merge-request history and `CONTRIBUTING.md`; re-check before submit
 
 ## Conventions reviewers enforce
 
+The full, cited style guide (from 328 of the maintainer's review comments and the merged BaconReader
+patches) is `STYLE.md`; our patches follow it, with the deliberate deviations listed there.
+
 - Patch name, the `val` name and the `.kt` file name match (`Fix Tumblr` → `val fixTumblrPatch` in `FixTumblrPatch.kt`).
 - Descriptions say what the patch does, in third person present tense, ending with a period; not how it works.
 - Fingerprints never use obfuscated names, and live in `Fingerprints.kt`. Prefer the declarative APIs
@@ -58,6 +61,7 @@ These are fork-only and should not be in an upstream MR:
   Redgifs code changed), resolve conflicts, rebuild, and rerun `scripts/verify_patch.sh` and the e2e suite here.
 - Patch names, `val`s and file names already match, and the explicit defaults are gone (done November 2026);
   keep it that way for new patches.
+- The branch is rebased onto upstream `dev` (November 2026); rebase again before opening an MR.
 - `patches/api/patches.api` lists every Sync patch getter. This checkout has no `apiDump` or ktlint task, so it
   was updated from the compiled classes (`javap`); if upstream `dev` has those tasks, run them there instead.
 - Build the MR branch from `git cherry-pick`/`git checkout <fork> -- <paths>` of only the patch and extension

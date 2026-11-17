@@ -15,7 +15,7 @@ import org.json.JSONTokener;
  * Sync's Imgur proxy (images.syncforreddit.com) is gone. Single images need no lookup: their direct
  * i.imgur.com URL is built locally. Albums load Imgur's public embed page, whose inline
  * {@code var images = {...}} JSON lists every image; it is converted to the Imgur API shape Sync's
- * album parser already reads. No API key, no Imgur API.
+ * album parser already reads. This does not require an API key.
  */
 public final class FixImgurPatch {
     private static final String LOCAL = "https://revanced.invalid/imgur/";
@@ -101,7 +101,7 @@ public final class FixImgurPatch {
         }
     }
 
-    /** null lets Volley proceed normally; local URLs must never enter the network queue. */
+    /** Returns null to let Volley proceed normally. Local URLs must never enter the network queue. */
     public static String localResponse(String url) {
         if (!url.startsWith(LOCAL)) return null;
         // The existing album parser turns this into a ParseError, delivered normally by Volley.

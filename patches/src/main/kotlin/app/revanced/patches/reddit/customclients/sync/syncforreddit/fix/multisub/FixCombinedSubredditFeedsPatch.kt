@@ -21,7 +21,7 @@ val fixCombinedSubredditFeedsPatch = bytecodePatch(
 
     apply {
         // p3 is the request URL, passed straight to Volley's Request constructor.
-        redditRequestConstructorMatch.method.addInstructions(
+        redditRequestConstructorMethodMatch.method.addInstructions(
             0,
             """
                 invoke-static { p3 }, $EXTENSION_CLASS_DESCRIPTOR->fixUrl(Ljava/lang/String;)Ljava/lang/String;

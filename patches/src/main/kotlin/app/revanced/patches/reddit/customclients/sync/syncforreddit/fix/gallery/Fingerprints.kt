@@ -1,9 +1,16 @@
 package app.revanced.patches.reddit.customclients.sync.syncforreddit.fix.gallery
 
-import app.revanced.patcher.*
+import app.revanced.patcher.composingFirstMethod
+import app.revanced.patcher.custom
+import app.revanced.patcher.immutableClassDef
+import app.revanced.patcher.instructions
+import app.revanced.patcher.name
+import app.revanced.patcher.parameterTypes
 import app.revanced.patcher.patch.BytecodePatchContext
+import app.revanced.patcher.returnType
+import app.revanced.patcher.string
 
-// OAuthGalleryRequest.b(String): builds the /api/info.json URL (y8.q.b in v23.06.30).
+// Builds the /api/info.json URL.
 internal val BytecodePatchContext.galleryUrlMethodMatch by composingFirstMethod {
     returnType("Ljava/lang/String;")
     parameterTypes("Ljava/lang/String;")

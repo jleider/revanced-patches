@@ -45,7 +45,7 @@ public final class FixRedditStatusPatch {
 
     private FixRedditStatusPatch() {}
 
-    /** Replaces RedditStatusRequest's parser: true = healthy (no sheet). Never throws. */
+    /** Returns whether the response indicates a healthy service, suppressing the outage sheet. Never throws. */
     public static boolean healthy(String body) {
         try {
             long now = System.currentTimeMillis();
