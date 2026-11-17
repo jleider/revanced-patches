@@ -2,30 +2,34 @@ package app.revanced.extension.syncforreddit;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import app.revanced.extension.shared.Logger;
+
 /**
  * Adapts comment permalink listings to Sync's morechildren parser (/api/morechildren is blocked).
  *
- * Two modes, so one "load more" row costs one request in the common case:
- *  - batch (a row as Reddit sent it): fetch the parent once (the post for top-level rows,
- *    /_/<parent comment> otherwise) and return every requested comment found in it;
- *  - anchored (a row this adapter emitted; its first id carries the {@link #ANCHORED} prefix): the
- *    remaining comments weren't in the parent's listing, so fetch them one permalink at a time.
- *    The prefix rides on an existing id so Sync's "load N more" count stays right.
+ * A row from Reddit usually needs only one request. Fetch the post for a top-level row or the parent
+ * comment for a nested row, then return every requested comment found in that listing.
+ * If the parent listing omits some comments, the next row fetches them one permalink at a time.
+ * The {@link #ANCHORED} prefix rides on an existing ID so Sync's "load N more" count stays right.
  * A malformed response is returned unchanged so Sync's own parser fails and keeps the row.
  */
+@SuppressWarnings("unused")
 public final class FixMoreCommentsPatch {
     /** Prefix on the first child id of rows we emit. Comment ids are [a-z0-9]+, so it can't collide. */
     static final String ANCHORED = "~";
 
-    private FixMoreCommentsPatch() {}
+    private FixMoreCommentsPatch() {
+    }
 
     // The parent is absent from OAuthCommentsMoreRequest's arguments. Carry it in
     // its unused GET form map, rather than keeping process-global request state.
+    /** Injection point. */
     public static String encodeChildren(String children, String parent) {
         return parent + "|" + (children == null ? "" : children);
     }
@@ -43,44 +47,62 @@ public final class FixMoreCommentsPatch {
         LinkedHashSet<String> result = new LinkedHashSet<>();
         for (String id : encoded.substring(encoded.indexOf('|') + 1).split(",")) {
             id = id.trim();
-            if (id.startsWith(ANCHORED)) id = id.substring(ANCHORED.length());
-            if (id.matches("[a-z0-9]+")) result.add(id);
+            if (id.startsWith(ANCHORED)) {
+                id = id.substring(ANCHORED.length());
+            }
+            if (id.matches("[a-z0-9]+")) {
+                result.add(id);
+            }
         }
         return result;
     }
 
+    /** Injection point. */
     public static String buildUrl(String post, String encoded, String sort) {
-        Set<String> children = ids(encoded);
-        String parent = parent(encoded);
-        String anchor;
-        if (anchored(encoded) && !children.isEmpty()) {
-            anchor = children.iterator().next();
-        } else {
-            // Batch: the parent comment's subtree, or the whole post for top-level rows.
-            anchor = parent.startsWith("t1_") ? parent.substring(3) : "";
+        try {
+            Set<String> children = ids(encoded);
+            String parent = parent(encoded);
+            String anchor;
+            if (anchored(encoded) && !children.isEmpty()) {
+                anchor = children.iterator().next();
+            } else {
+                // A single parent listing can cover several requested comments in batch mode.
+                anchor = parent.startsWith("t1_") ? parent.substring(3) : "";
+            }
+            String url = "https://oauth.reddit.com/comments/" + post;
+            if (anchor.matches("[a-z0-9]+")) {
+                url += "/_/" + anchor;
+            }
+            // Reddit spends limit=500 on nested replies first. For a top-level batch, depth=3 reaches
+            // ~35% more hidden top-level comments (measured on a 1.3k-comment thread); deeper replies
+            // become ordinary "View more" rows that batch per parent when tapped.
+            int depth = anchor.isEmpty() ? 3 : 10;
+            url += "?limit=500&depth=" + depth + "&context=0&raw_json=1&always_show_media=1&profile_img=true";
+            if (sort != null && sort.matches("[A-Za-z_]+")) {
+                url += "&sort=" + sort.toLowerCase(Locale.ENGLISH);
+            }
+            return url;
+        } catch (Exception ex) {
+            Logger.printException(() -> "Could not build the more-comments URL", ex);
+            // The constructor needs a URL for the request. Preserve its existing failure path.
+            throw ex;
         }
-        String url = "https://oauth.reddit.com/comments/" + post;
-        if (anchor.matches("[a-z0-9]+")) url += "/_/" + anchor;
-        // Reddit spends limit=500 on nested replies first. For a top-level batch, depth=3 reaches
-        // ~35% more hidden top-level comments (measured on a 1.3k-comment thread); deeper replies
-        // become ordinary "View more" rows that batch per parent when tapped.
-        int depth = anchor.isEmpty() ? 3 : 10;
-        url += "?limit=500&depth=" + depth + "&context=0&raw_json=1&always_show_media=1&profile_img=true";
-        if (sort != null && sort.matches("[A-Za-z_]+")) {
-            url += "&sort=" + sort.toLowerCase(Locale.ENGLISH);
-        }
-        return url;
     }
 
+    /** Injection point. */
     public static String convert(String body, Map<String, String> params) {
-        if (params == null) return body;
+        if (params == null) {
+            return body;
+        }
         return convertListing(body, params.get("children"));
     }
 
     /** Converts a response without Android dependencies so it can also be tested with JVM fixtures. */
     public static String convertListing(String body, String encoded) {
         try {
-            if (encoded == null) return body;
+            if (encoded == null) {
+                return body;
+            }
             boolean anchoredMode = anchored(encoded);
             LinkedHashSet<String> requested = ids(encoded);
             JSONArray listing = new JSONArray(body);
@@ -91,7 +113,9 @@ public final class FixMoreCommentsPatch {
             select(roots, requested, output, emitted, found, 0);
             // Anchored mode fetched only the first id: skip it even when it's missing (deleted or
             // blocked), so automatic top-level loading can't retry the same comment forever.
-            if (anchoredMode && !requested.isEmpty()) requested.remove(requested.iterator().next());
+            if (anchoredMode && !requested.isEmpty()) {
+                requested.remove(requested.iterator().next());
+            }
             requested.removeAll(found);
             for (int i = 0; i < output.length(); i++) {
                 JSONObject thing = output.getJSONObject(i);
@@ -101,7 +125,9 @@ public final class FixMoreCommentsPatch {
             }
             if (!requested.isEmpty() && parent(encoded).matches("t[13]_[a-z0-9]+")) {
                 JSONArray children = new JSONArray();
-                for (String id : requested) children.put(children.length() == 0 ? ANCHORED + id : id);
+                for (String id : requested) {
+                    children.put(children.length() == 0 ? ANCHORED + id : id);
+                }
                 JSONObject data = new JSONObject();
                 data.put("id", "_");
                 data.put("name", "t1__");
@@ -112,9 +138,9 @@ public final class FixMoreCommentsPatch {
             }
             return new JSONObject().put("json", new JSONObject().put("data",
                     new JSONObject().put("things", output))).toString();
-        } catch (Exception e) {
-            // Not a comments listing (HTML block page, error JSON, ...): let Sync's parser reject
-            // it so the "load more" row survives for a retry instead of being consumed.
+        } catch (Exception ex) {
+            Logger.printException(() -> "Could not convert the more-comments listing", ex);
+            // The original body lets Sync report the parse error and keep the row for a retry.
             return body == null ? "" : body;
         }
     }
@@ -127,7 +153,9 @@ public final class FixMoreCommentsPatch {
 
     private static void select(JSONArray nodes, Set<String> requested, JSONArray output,
                                Set<String> emitted, Set<String> found, int depth) throws Exception {
-        if (nodes == null || depth > 100) return;
+        if (nodes == null || depth > 100) {
+            return;
+        }
         for (int i = 0; i < nodes.length(); i++) {
             JSONObject thing = nodes.getJSONObject(i);
             JSONObject data = thing.getJSONObject("data");
@@ -142,19 +170,31 @@ public final class FixMoreCommentsPatch {
 
     private static void flatten(JSONObject thing, JSONArray output, Set<String> emitted,
                                 int depth) throws Exception {
-        if (depth > 100) return;
+        if (depth > 100) {
+            return;
+        }
         String kind = thing.optString("kind");
-        if (!"t1".equals(kind) && !"more".equals(kind)) return;
+        if (!"t1".equals(kind) && !"more".equals(kind)) {
+            return;
+        }
         JSONObject data = thing.getJSONObject("data");
-        if (data.optString("id").isEmpty() || data.optString("parent_id").isEmpty()) return;
+        if (data.optString("id").isEmpty() || data.optString("parent_id").isEmpty()) {
+            return;
+        }
         String key = kind + ":" + data.getString("id") + ":" + data.getString("parent_id");
-        if (!emitted.add(key)) return;
+        if (!emitted.add(key)) {
+            return;
+        }
         JSONArray children = replies(data);
         data.put("replies", "");
-        if ("more".equals(kind) && data.optJSONArray("children") == null) data.put("children", new JSONArray());
+        if ("more".equals(kind) && data.optJSONArray("children") == null) {
+            data.put("children", new JSONArray());
+        }
         output.put(thing);
         if (children != null) {
-            for (int i = 0; i < children.length(); i++) flatten(children.getJSONObject(i), output, emitted, depth + 1);
+            for (int i = 0; i < children.length(); i++) {
+                flatten(children.getJSONObject(i), output, emitted, depth + 1);
+            }
         }
     }
 }

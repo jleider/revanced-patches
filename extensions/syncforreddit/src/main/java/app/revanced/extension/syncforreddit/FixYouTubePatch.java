@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.content.Intent;
 import android.net.Uri;
 
+import app.revanced.extension.shared.Logger;
+
 /**
  * Sync plays YouTube in-app through the YouTube Android Player API, which runs inside the YouTube app
  * (service action com.google.android.youtube.api.service.START). Current YouTube versions no longer
@@ -13,30 +15,42 @@ import android.net.Uri;
  * For that failure this opens the link in the YouTube app (or browser) and closes Sync's player.
  * It deliberately does not take Sync's own SERVICE_INVALID path, which also switches off the
  * "open YouTube links in Sync" setting permanently.
- *
- * @noinspection unused
  */
+@SuppressWarnings("unused")
 public final class FixYouTubePatch {
-    private FixYouTubePatch() {}
+    private FixYouTubePatch() {
+    }
 
     static boolean unavailable(Object result) {
-        if (!(result instanceof Enum)) return false;
+        if (!(result instanceof Enum)) {
+            return false;
+        }
         String name = ((Enum<?>) result).name();
         return "SERVICE_MISSING".equals(name) || "SERVICE_VERSION_UPDATE_REQUIRED".equals(name);
     }
 
-    /** Called first in the player's onInitializationFailure. True = handled, Sync's code is skipped. */
+    /** Injection point. Returns whether Sync can skip its player initialization error dialog. */
     public static boolean openExternally(Activity activity, Object result) {
-        if (!unavailable(result)) return false;
-        String url = activity.getIntent() == null ? null : activity.getIntent().getStringExtra("url");
-        if (url != null && (url.startsWith("https://") || url.startsWith("http://"))) {
-            try {
-                activity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-            } catch (Exception ignored) {
-                // no app for the link: just close the player
+        try {
+            if (!unavailable(result)) {
+                return false;
             }
+            Intent intent = activity.getIntent();
+            String url = intent == null ? null : intent.getStringExtra("url");
+            if (url != null && (url.startsWith("https://") || url.startsWith("http://"))) {
+                try {
+                    activity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                } catch (Exception ex) {
+                    // Close the defunct player even when no app can handle the link.
+                    Logger.printException(() -> "Could not open the YouTube video externally", ex);
+                }
+            }
+            activity.finish();
+            return true;
+        } catch (Exception ex) {
+            Logger.printException(() -> "Could not handle the YouTube player initialization failure", ex);
+            return false;
         }
-        activity.finish();
-        return true;
     }
 }

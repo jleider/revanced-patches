@@ -9,6 +9,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -16,14 +17,16 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import app.revanced.extension.shared.Logger;
+import app.revanced.extension.shared.Utils;
+
 /**
  * Sync opened Tumblr posts through api.tumblr.com/v2 with a built-in API key that Tumblr revoked.
  * Instead, the blog's keyless v1 endpoint ({@code <blog>.tumblr.com/api/read/json?id=<post>}) is
  * read and its images are handed to TumblrRequest's parser in the v2 shape it expects, so they open in
  * Sync's normal image viewer. A post without images opens in the browser.
- *
- * @noinspection unused
  */
+@SuppressWarnings("unused")
 public final class FixTumblrPatch {
     private static final String MARKER = "revanced_tumblr=1";
     private static final Pattern BLOG = Pattern.compile("[A-Za-z0-9-]{1,64}");
@@ -32,125 +35,219 @@ public final class FixTumblrPatch {
     private static final Pattern MEDIA = Pattern.compile(
             "https://(?:\\d+\\.)?media\\.tumblr\\.com/([0-9a-f]{32}/[0-9a-f]{16}-[0-9a-z]{2})/s(\\d+)x(\\d+)[^\\s\"'<>\\\\,]*");
 
-    private FixTumblrPatch() {}
+    private static final class PostReference {
+        final String blog;
+        final String id;
 
-    /** Replaces TumblrRequest's v2 URL builder: the keyless v1 URL for the post, or the post itself. */
-    public static String apiUrl(String postUrl) {
-        String[] blogAndId = blogAndId(postUrl);
-        if (blogAndId == null) return postUrl;
-        return "https://" + blogAndId[0] + ".tumblr.com/api/read/json?id=" + blogAndId[1] + "&" + MARKER;
+        PostReference(String blog, String id) {
+            this.blog = blog;
+            this.id = id;
+        }
     }
 
-    /** {blog, postId} of blog.tumblr.com/post/ID/… or www.tumblr.com/blog/ID/…, or null. */
-    static String[] blogAndId(String url) {
-        if (url == null) return null;
-        Matcher m = Pattern.compile("(?i)^https?://([^/?#]+)/([^?#]*)").matcher(url.trim());
-        if (!m.find()) return null;
-        String host = m.group(1).toLowerCase(Locale.ROOT);
-        String[] seg = m.group(2).split("/");
-        String blog = null, id = null;
+    private static final class ImageSizes {
+        final String largestUrl;
+        final long largestSize;
+        final String smallestUrl;
+        final long smallestSize;
+
+        ImageSizes(String largestUrl, long largestSize, String smallestUrl, long smallestSize) {
+            this.largestUrl = largestUrl;
+            this.largestSize = largestSize;
+            this.smallestUrl = smallestUrl;
+            this.smallestSize = smallestSize;
+        }
+    }
+
+    private FixTumblrPatch() {
+    }
+
+    /** Injection point. Uses the keyless endpoint for supported Tumblr post URLs. */
+    public static String apiUrl(String postUrl) {
+        try {
+            PostReference post = parsePostReference(postUrl);
+            if (post == null) {
+                return postUrl;
+            }
+            return "https://" + post.blog + ".tumblr.com/api/read/json?id=" + post.id + "&" + MARKER;
+        } catch (Exception ex) {
+            Logger.printException(() -> "Could not build the Tumblr API URL", ex);
+            return postUrl;
+        }
+    }
+
+    /** Extracts the blog and post ID from either Tumblr permalink format. */
+    private static PostReference parsePostReference(String url) {
+        if (url == null) {
+            return null;
+        }
+        Matcher matcher = Pattern.compile("(?i)^https?://([^/?#]+)/([^?#]*)").matcher(url.trim());
+        if (!matcher.find()) {
+            return null;
+        }
+        String host = matcher.group(1).toLowerCase(Locale.ROOT);
+        String[] segments = matcher.group(2).split("/");
+        String blog = null;
+        String id = null;
         if (host.equals("tumblr.com") || host.equals("www.tumblr.com")) {
-            if (seg.length >= 2 && !seg[0].equals("blog")) { blog = seg[0]; id = seg[1]; }
-            else if (seg.length >= 4 && seg[0].equals("blog") && seg[1].equals("view")) { blog = seg[2]; id = seg[3]; }
+            if (segments.length >= 2 && !segments[0].equals("blog")) {
+                blog = segments[0];
+                id = segments[1];
+            } else if (segments.length >= 4 && segments[0].equals("blog") && segments[1].equals("view")) {
+                blog = segments[2];
+                id = segments[3];
+            }
         } else if (host.endsWith(".tumblr.com")) {
             blog = host.substring(0, host.length() - ".tumblr.com".length());
-            for (int i = 0; i + 1 < seg.length; i++) if (seg[i].equals("post")) { id = seg[i + 1]; break; }
+            for (int i = 0; i + 1 < segments.length; i++) {
+                if (segments[i].equals("post")) {
+                    id = segments[i + 1];
+                    break;
+                }
+            }
         }
-        if (blog == null || id == null || !BLOG.matcher(blog).matches() || !ID.matcher(id).matches()) return null;
-        return new String[]{blog, id};
+        if (blog == null || id == null || !BLOG.matcher(blog).matches() || !ID.matcher(id).matches()) {
+            return null;
+        }
+        return new PostReference(blog, id);
     }
 
-    /** TumblrRequest's response body -> v2 JSON with the post's photos. Throws when there are none. */
+    /** Injection point. Adapts the post's photos to the v2 response that Sync expects. */
     public static String convert(String body, String requestUrl) throws JSONException {
-        if (requestUrl == null || !requestUrl.contains(MARKER)) return body;
-        List<String[]> images = images(body);
-        if (images.isEmpty()) {
-            openInBrowser(requestUrl);
-            throw new JSONException("Tumblr post has no images");
+        try {
+            if (requestUrl == null || !requestUrl.contains(MARKER)) {
+                return body;
+            }
+            List<ImageSizes> images = images(body);
+            if (images.isEmpty()) {
+                openInBrowser(requestUrl);
+                throw new JSONException("Tumblr post has no images");
+            }
+            JSONArray photos = new JSONArray();
+            for (ImageSizes image : images) {
+                photos.put(new JSONObject()
+                        .put("original_size", new JSONObject().put("url", image.largestUrl))
+                        .put("alt_sizes", new JSONArray().put(new JSONObject().put("url", image.smallestUrl))));
+            }
+            return new JSONObject().put("response", new JSONObject().put("posts",
+                    new JSONArray().put(new JSONObject().put("photos", photos)))).toString();
+        } catch (Exception ex) {
+            Logger.printException(() -> "Could not convert the Tumblr response", ex);
+            // Sync's Volley parser reports this as a parse error.
+            throw ex;
         }
-        JSONArray photos = new JSONArray();
-        for (String[] img : images) {
-            photos.put(new JSONObject()
-                    .put("original_size", new JSONObject().put("url", img[0]))
-                    .put("alt_sizes", new JSONArray().put(new JSONObject().put("url", img[1]))));
-        }
-        return new JSONObject().put("response", new JSONObject().put("posts",
-                new JSONArray().put(new JSONObject().put("photos", photos)))).toString();
     }
 
-    /** {largest, smallest} URL per image of the post, in order. Avatars and blog chrome are excluded. */
-    static List<String[]> images(String body) throws JSONException {
+    /** Finds the largest and smallest variants of each post image in order. */
+    private static List<ImageSizes> images(String body) throws JSONException {
         String json = body.trim();
         int start = json.indexOf('{');
         int end = json.lastIndexOf('}');
-        if (start < 0 || end < start) throw new JSONException("Not a Tumblr v1 response");
+        if (start < 0 || end < start) {
+            throw new JSONException("Not a Tumblr v1 response");
+        }
         JSONArray posts = new JSONObject(json.substring(start, end + 1)).optJSONArray("posts");
         JSONObject post = posts != null && posts.length() > 0 ? posts.getJSONObject(0) : null;
-        if (post == null) return new ArrayList<>();
-        List<String[]> out = new ArrayList<>();
+        if (post == null) {
+            return new ArrayList<>();
+        }
+        List<ImageSizes> images = new ArrayList<>();
         // Legacy photo posts and photosets carry their sizes as photo-url-<width> fields.
         JSONArray photos = post.optJSONArray("photos");
         if (photos != null && photos.length() > 0) {
             for (int i = 0; i < photos.length(); i++) {
-                String[] sizes = legacySizes(photos.optJSONObject(i));
-                if (sizes != null) out.add(sizes);
+                ImageSizes sizes = legacySizes(photos.optJSONObject(i));
+                if (sizes != null) {
+                    images.add(sizes);
+                }
             }
         } else {
-            String[] sizes = legacySizes(post);
-            if (sizes != null) out.add(sizes);
+            ImageSizes sizes = legacySizes(post);
+            if (sizes != null) {
+                images.add(sizes);
+            }
         }
-        if (!out.isEmpty()) return out;
-        // NPF posts: <img srcset> inside the HTML body fields.
+        if (!images.isEmpty()) {
+            return images;
+        }
+        // Neue Post Format posts carry image variants in HTML srcset attributes.
         StringBuilder text = new StringBuilder();
         for (String field : new String[]{"regular-body", "photo-caption", "answer", "link-description", "quote-text"}) {
             text.append(post.optString(field)).append('\n');
         }
-        // id -> {largest url, largest area, smallest url, smallest area}
-        Map<String, Object[]> byImage = new LinkedHashMap<>();
-        Matcher m = MEDIA.matcher(text.toString().replace("\\/", "/"));
-        while (m.find()) {
-            String url = m.group(0);
-            if (url.contains("u_c1")) continue;   // square avatar crops
-            long area = Long.parseLong(m.group(2)) * Long.parseLong(m.group(3));
-            Object[] e = byImage.get(m.group(1));
-            if (e == null) byImage.put(m.group(1), new Object[]{url, area, url, area});
-            else {
-                if (area > (Long) e[1]) { e[0] = url; e[1] = area; }
-                if (area < (Long) e[3]) { e[2] = url; e[3] = area; }
+        Map<String, ImageSizes> sizesById = new LinkedHashMap<>();
+        Matcher matcher = MEDIA.matcher(text.toString().replace("\\/", "/"));
+        while (matcher.find()) {
+            String url = matcher.group(0);
+            // Tumblr uses this crop for square avatars.
+            if (url.contains("u_c1")) {
+                continue;
+            }
+            long area = Long.parseLong(matcher.group(2)) * Long.parseLong(matcher.group(3));
+            String imageId = matcher.group(1);
+            ImageSizes sizes = sizesById.get(imageId);
+            if (sizes == null) {
+                sizesById.put(imageId, new ImageSizes(url, area, url, area));
+                continue;
+            }
+            boolean larger = area > sizes.largestSize;
+            boolean smaller = area < sizes.smallestSize;
+            if (larger || smaller) {
+                sizesById.put(imageId, new ImageSizes(
+                        larger ? url : sizes.largestUrl, larger ? area : sizes.largestSize,
+                        smaller ? url : sizes.smallestUrl, smaller ? area : sizes.smallestSize));
             }
         }
-        for (Object[] e : byImage.values()) out.add(new String[]{(String) e[0], (String) e[2]});
-        return out;
+        return new ArrayList<>(sizesById.values());
     }
 
-    /** {largest, smallest} of an object's photo-url-<width> fields, or null. */
-    static String[] legacySizes(JSONObject o) {
-        if (o == null) return null;
-        String largest = null, smallest = null;
-        int max = -1, min = Integer.MAX_VALUE;
-        java.util.Iterator<String> keys = o.keys();
-        while (keys.hasNext()) {
-            String k = keys.next();
-            if (!k.matches("photo-url-\\d+")) continue;
-            String url = o.optString(k);
-            if (!url.startsWith("https://") && !url.startsWith("http://")) continue;
-            int w = Integer.parseInt(k.substring("photo-url-".length()));
-            if (w > max) { max = w; largest = url; }
-            if (w < min) { min = w; smallest = url; }
+    /** Uses the width encoded in the legacy photo-url fields to rank variants. */
+    private static ImageSizes legacySizes(JSONObject photo) {
+        if (photo == null) {
+            return null;
         }
-        return largest == null ? null : new String[]{largest, smallest};
+        String largest = null;
+        String smallest = null;
+        int largestWidth = -1;
+        int smallestWidth = Integer.MAX_VALUE;
+        Iterator<String> keys = photo.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            if (!key.matches("photo-url-\\d+")) {
+                continue;
+            }
+            String url = photo.optString(key);
+            if (!url.startsWith("https://") && !url.startsWith("http://")) {
+                continue;
+            }
+            int width = Integer.parseInt(key.substring("photo-url-".length()));
+            if (width > largestWidth) {
+                largestWidth = width;
+                largest = url;
+            }
+            if (width < smallestWidth) {
+                smallestWidth = width;
+                smallest = url;
+            }
+        }
+        return largest == null ? null : new ImageSizes(largest, largestWidth, smallest, smallestWidth);
     }
 
     private static void openInBrowser(String requestUrl) {
         try {
-            Matcher m = Pattern.compile("^https://([^.]+)\\.tumblr\\.com/api/read/json\\?id=(\\d+)").matcher(requestUrl);
-            if (!m.find()) return;
-            Context c = (Context) Class.forName("android.app.ActivityThread").getMethod("currentApplication").invoke(null);
-            if (c == null) return;
-            c.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://www.tumblr.com/" + m.group(1) + "/" + m.group(2)))
+            Matcher matcher = Pattern.compile("^https://([^.]+)\\.tumblr\\.com/api/read/json\\?id=(\\d+)").matcher(requestUrl);
+            if (!matcher.find()) {
+                return;
+            }
+            Context context = Utils.getContext();
+            if (context == null) {
+                return;
+            }
+            context.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://www.tumblr.com/" + matcher.group(1) + "/" + matcher.group(2)))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-        } catch (Throwable ignored) {
-            // no browser or no context: Sync shows its own error
+        } catch (Throwable ex) {
+            // Sync still reports the parse error when the browser cannot be opened.
+            Logger.printException(() -> "Could not open the Tumblr post in a browser", ex);
         }
     }
 }

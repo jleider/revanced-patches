@@ -3,6 +3,8 @@ package app.revanced.extension.syncforreddit;
 import android.net.Uri;
 import android.webkit.WebView;
 
+import app.revanced.extension.shared.Logger;
+
 /**
  * Reddit's current login page ignores the OAuth "dest" parameter and lands on the
  * homepage after a successful login, so Sync's login WebView never reaches the
@@ -12,9 +14,8 @@ import android.webkit.WebView;
  * Known limitation: if Android kills the process while the login dialog is open and later
  * restores it, the authorize URL isn't rebuilt and the fix is inactive until the dialog is
  * reopened.
- *
- * @noinspection unused
  */
+@SuppressWarnings("unused")
 public final class FixLoginRedirectPatch {
     private static final int MAX_RETRIES = 3;
     // WebView can report progress 100 several times for one page, and loadUrl is async, so
@@ -24,7 +25,7 @@ public final class FixLoginRedirectPatch {
     private static int retries;
     private static long lastRedirectAt;
 
-    /** Called with the authorize URL Sync is about to load. */
+    /** Injection point. Called with the authorize URL Sync is about to load. */
     public static void rememberAuthorizeUrl(String url) {
         if (url != null && url.contains("/api/v1/authorize")) {
             authorizeUrl = url;
@@ -33,23 +34,39 @@ public final class FixLoginRedirectPatch {
         }
     }
 
-    /** Called from the login WebChromeClient's onProgressChanged. */
+    /** Injection point. Called from the login WebChromeClient's onProgressChanged. */
     public static void onProgressChanged(WebView view, int progress) {
-        if (progress != 100 || view == null || authorizeUrl == null) return;
-        if (!isRedditHomepage(view.getUrl())) return;
-        long now = android.os.SystemClock.elapsedRealtime();
-        if (now - lastRedirectAt < DEBOUNCE_MS) return;
-        if (retries >= MAX_RETRIES) return;
-        retries++;
-        lastRedirectAt = now;
-        view.loadUrl(authorizeUrl);
+        try {
+            if (progress != 100 || view == null || authorizeUrl == null) {
+                return;
+            }
+            if (!isRedditHomepage(view.getUrl())) {
+                return;
+            }
+            long now = android.os.SystemClock.elapsedRealtime();
+            if (now - lastRedirectAt < DEBOUNCE_MS) {
+                return;
+            }
+            if (retries >= MAX_RETRIES) {
+                return;
+            }
+            retries++;
+            lastRedirectAt = now;
+            view.loadUrl(authorizeUrl);
+        } catch (Exception ex) {
+            Logger.printException(() -> "Could not redirect the Reddit login", ex);
+        }
     }
 
     static boolean isRedditHomepage(String url) {
-        if (url == null) return false;
+        if (url == null) {
+            return false;
+        }
         Uri uri = Uri.parse(url);
         String host = uri.getHost();
-        if (host == null || !(host.equals("reddit.com") || host.endsWith(".reddit.com"))) return false;
+        if (host == null || !(host.equals("reddit.com") || host.endsWith(".reddit.com"))) {
+            return false;
+        }
         String path = uri.getPath();
         return path == null || path.isEmpty() || path.equals("/");
     }

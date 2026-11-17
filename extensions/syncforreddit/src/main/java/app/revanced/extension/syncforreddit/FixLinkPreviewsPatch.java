@@ -1,30 +1,35 @@
 package app.revanced.extension.syncforreddit;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.util.LinkedHashMap;
-import java.util.Locale;
-import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.net.InetAddress;
+import java.net.Proxy;
+import java.net.URI;
 import java.net.UnknownHostException;
 import java.net.UnknownServiceException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
+import app.revanced.extension.shared.Logger;
+import okhttp3.Connection;
 import okhttp3.Dns;
+import okhttp3.HttpUrl;
 import okhttp3.Interceptor;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
+import okhttp3.Route;
 
 /**
  * Sync's image previews for links (Ultra "website previews", inline Imgur album / Tenor thumbnails)
@@ -38,9 +43,8 @@ import okhttp3.ResponseBody;
  * 10 MB cap on the decoded bytes (chunked or compressed responses included) before Glide sees them,
  * and the call has a 20 s timeout. http:// is tried over https first (the
  * Upgrade connections to HTTPS patch, with an http fallback so previews keep working).
- *
- * @noinspection unused
  */
+@SuppressWarnings("unused")
 public final class FixLinkPreviewsPatch implements Interceptor {
     private static final String PROXY = "https://ap.syncforreddit.com/image?url=";
     private static final int MAX_HTML_BYTES = 256 * 1024;
@@ -52,12 +56,22 @@ public final class FixLinkPreviewsPatch implements Interceptor {
     private static final String[] KEYS = {
             "og:image:secure_url", "og:image", "og:image:url", "twitter:image", "twitter:image:src"};
 
-    // page URL -> preview image URL ("" = page has none) with the time it was looked up.
+    // A page without an image is cached briefly so a later lookup can find one.
     private static final long FOUND_TTL_MS = 6 * 60 * 60 * 1000L;
     private static final long NONE_TTL_MS = 15 * 60 * 1000L;
-    private static final Map<String, Object[]> CACHE = new LinkedHashMap<String, Object[]>(64, 0.75f, true) {
+    private static final class PreviewEntry {
+        final String imageUrl;
+        final long fetchedAt;
+
+        PreviewEntry(String imageUrl, long fetchedAt) {
+            this.imageUrl = imageUrl;
+            this.fetchedAt = fetchedAt;
+        }
+    }
+
+    private static final Map<String, PreviewEntry> CACHE = new LinkedHashMap<String, PreviewEntry>(64, 0.75f, true) {
         @Override
-        protected boolean removeEldestEntry(Map.Entry<String, Object[]> eldest) {
+        protected boolean removeEldestEntry(Map.Entry<String, PreviewEntry> eldest) {
             return size() > 300;
         }
     };
@@ -67,8 +81,14 @@ public final class FixLinkPreviewsPatch implements Interceptor {
         @Override
         public List<InetAddress> lookup(String host) throws UnknownHostException {
             List<InetAddress> allowed = new ArrayList<>();
-            for (InetAddress a : InetAddress.getAllByName(host)) if (!isPrivate(a)) allowed.add(a);
-            if (allowed.isEmpty()) throw new UnknownHostException("Preview blocked: " + host + " is a private address");
+            for (InetAddress a : InetAddress.getAllByName(host)) {
+                if (!isPrivate(a)) {
+                    allowed.add(a);
+                }
+            }
+            if (allowed.isEmpty()) {
+                throw new UnknownHostException("Preview blocked: " + host + " is a private address");
+            }
             return allowed;
         }
     };
@@ -82,7 +102,10 @@ public final class FixLinkPreviewsPatch implements Interceptor {
     static boolean blockedHop(String host, InetAddress connected, boolean viaProxy) {
         if (host != null && (host.indexOf(':') >= 0 || host.matches("[0-9.]+"))) {
             try {
-                if (isPrivate(InetAddress.getByName(host))) return true;   // literal: no DNS lookup
+                // Resolving an address literal does not make a DNS request.
+                if (isPrivate(InetAddress.getByName(host))) {
+                    return true;
+                }
             } catch (UnknownHostException e) {
                 return true;
             }
@@ -94,31 +117,45 @@ public final class FixLinkPreviewsPatch implements Interceptor {
         Request request = chain.request();
         InetAddress connected = null;
         boolean viaProxy = false;
-        okhttp3.Connection connection = chain.connection();
+        Connection connection = chain.connection();
         if (connection != null) {
-            okhttp3.Route route = connection.route();
-            viaProxy = route.proxy().type() != java.net.Proxy.Type.DIRECT;
+            Route route = connection.route();
+            viaProxy = route.proxy().type() != Proxy.Type.DIRECT;
             connected = route.socketAddress().getAddress();
         }
-        if (blockedHop(request.url().host(), connected, viaProxy))
+        if (blockedHop(request.url().host(), connected, viaProxy)) {
             throw new UnknownHostException("Preview blocked: " + request.url().host() + " is a private address");
+        }
         return chain.proceed(request);
     };
 
     static boolean isPrivate(InetAddress a) {
         if (a.isAnyLocalAddress() || a.isLoopbackAddress() || a.isLinkLocalAddress() || a.isSiteLocalAddress()
-                || a.isMulticastAddress()) return true;
+                || a.isMulticastAddress()) {
+            return true;
+        }
         byte[] b = a.getAddress();
         if (a instanceof Inet4Address) {
-            int b0 = b[0] & 0xff, b1 = b[1] & 0xff;
-            return b0 == 0 || (b0 == 100 && b1 >= 64 && b1 <= 127)        // 0/8, carrier-grade NAT 100.64/10
-                    || (b0 == 192 && b1 == 0 && (b[2] & 0xff) == 0)       // 192.0.0/24
-                    || (b0 == 198 && (b1 == 18 || b1 == 19)) || b0 >= 240; // benchmarking, reserved
+            int b0 = b[0] & 0xff;
+            int b1 = b[1] & 0xff;
+            // Also exclude carrier-grade NAT, special-use, benchmarking, and reserved IPv4 blocks.
+            return b0 == 0 || (b0 == 100 && b1 >= 64 && b1 <= 127)
+                    || (b0 == 192 && b1 == 0 && (b[2] & 0xff) == 0)
+                    || (b0 == 198 && (b1 == 18 || b1 == 19)) || b0 >= 240;
         }
         if (a instanceof Inet6Address) {
-            if ((b[0] & 0xfe) == 0xfc) return true;                         // unique local fc00::/7
-            boolean mapped = true;                                          // ::ffff:a.b.c.d
-            for (int i = 0; i < 10; i++) if (b[i] != 0) { mapped = false; break; }
+            // IPv6 unique-local addresses use fc00::/7.
+            if ((b[0] & 0xfe) == 0xfc) {
+                return true;
+            }
+            // Apply the IPv4 rules to IPv4-mapped IPv6 addresses.
+            boolean mapped = true;
+            for (int i = 0; i < 10; i++) {
+                if (b[i] != 0) {
+                    mapped = false;
+                    break;
+                }
+            }
             if (mapped && (b[10] & 0xff) == 0xff && (b[11] & 0xff) == 0xff) {
                 try {
                     return isPrivate(InetAddress.getByAddress(new byte[]{b[12], b[13], b[14], b[15]}));
@@ -137,14 +174,17 @@ public final class FixLinkPreviewsPatch implements Interceptor {
     private static OkHttpClient client() {
         if (client == null) {
             synchronized (FixLinkPreviewsPatch.class) {
-                if (client == null) client = new OkHttpClient.Builder()
-                        .dns(PUBLIC_ONLY_DNS)
-                        // Redirects are followed in fetch(), so every hop is checked before connecting.
-                        .followRedirects(false)
-                        .followSslRedirects(false)
-                        .addNetworkInterceptor(PUBLIC_ONLY_HOPS)
-                        .callTimeout(20, TimeUnit.SECONDS)
-                        .build();   // build() also adds the HTTPS upgrade interceptor in the app
+                if (client == null) {
+                    client = new OkHttpClient.Builder()
+                            .dns(PUBLIC_ONLY_DNS)
+                            // Redirects are followed in fetch(), so every hop is checked before connecting.
+                            .followRedirects(false)
+                            .followSslRedirects(false)
+                            .addNetworkInterceptor(PUBLIC_ONLY_HOPS)
+                            .callTimeout(20, TimeUnit.SECONDS)
+                            // The app's patched build() also adds the HTTPS upgrade interceptor.
+                            .build();
+                }
             }
         }
         return client;
@@ -161,46 +201,62 @@ public final class FixLinkPreviewsPatch implements Interceptor {
         Request current = request;
         for (int hop = 0; ; hop++) {
             String scheme = current.url().scheme();
-            if (!"http".equals(scheme) && !"https".equals(scheme))
+            if (!"http".equals(scheme) && !"https".equals(scheme)) {
                 throw new UnknownServiceException("Preview blocked: " + scheme);
-            if (blockedHop(current.url().host(), null, false))
+            }
+            if (blockedHop(current.url().host(), null, false)) {
                 throw new UnknownHostException("Preview blocked: " + current.url().host() + " is a private address");
+            }
             Response response = fetchThroughChainForTests ? chain.proceed(current) : client().newCall(current).execute();
-            if (!response.isRedirect()) return response;
+            if (!response.isRedirect()) {
+                return response;
+            }
             String location = response.header("Location");
             response.close();
-            okhttp3.HttpUrl next = location == null ? null : current.url().resolve(location);
-            if (next == null) throw new IOException("Preview redirect without a usable Location");
-            if (hop >= MAX_REDIRECTS) throw new IOException("Preview: too many redirects");
+            HttpUrl next = location == null ? null : current.url().resolve(location);
+            if (next == null) {
+                throw new IOException("Preview redirect without a usable Location");
+            }
+            if (hop >= MAX_REDIRECTS) {
+                throw new IOException("Preview: too many redirects");
+            }
             current = current.newBuilder().url(next).build();
         }
     }
 
+    /** Injection point. */
     public static OkHttpClient.Builder addInterceptor(OkHttpClient.Builder builder) {
-        return builder.addInterceptor(new FixLinkPreviewsPatch());
+        try {
+            return builder.addInterceptor(new FixLinkPreviewsPatch());
+        } catch (Exception ex) {
+            Logger.printException(() -> "Could not install the link preview interceptor", ex);
+            return builder;
+        }
     }
 
     @Override
     public Response intercept(Chain chain) throws IOException {
         Request request = chain.request();
-        if (!request.url().toString().startsWith(PROXY)) return chain.proceed(request);
+        if (!request.url().toString().startsWith(PROXY)) {
+            return chain.proceed(request);
+        }
         try {
             return preview(chain, request);
-        } catch (IOException e) {
-            throw e;
-        } catch (RuntimeException e) {
+        } catch (RuntimeException ex) {
             // OkHttp rethrows non-IOExceptions from enqueued calls on its dispatcher thread, which
             // would kill the app (e.g. OkHttp rejecting an og:image URL that java.net.URI accepted).
-            throw new IOException("Preview failed", e);
+            throw new IOException("Preview failed", ex);
         }
     }
 
     static String cached(String page, long now) {
         synchronized (CACHE) {
-            Object[] entry = CACHE.get(page);
-            if (entry == null) return null;
-            String image = (String) entry[0];
-            long age = now - (Long) entry[1];
+            PreviewEntry entry = CACHE.get(page);
+            if (entry == null) {
+                return null;
+            }
+            String image = entry.imageUrl;
+            long age = now - entry.fetchedAt;
             if (age > (image.isEmpty() ? NONE_TTL_MS : FOUND_TTL_MS)) {
                 CACHE.remove(page);
                 return null;
@@ -211,7 +267,7 @@ public final class FixLinkPreviewsPatch implements Interceptor {
 
     static void remember(String page, String image, long now) {
         synchronized (CACHE) {
-            CACHE.put(page, new Object[]{image == null ? NONE : image, now});
+            CACHE.put(page, new PreviewEntry(image == null ? NONE : image, now));
         }
     }
 
@@ -223,14 +279,19 @@ public final class FixLinkPreviewsPatch implements Interceptor {
 
     private Response preview(Chain chain, Request request) throws IOException {
         String page = pageFor(request.url().toString().substring(PROXY.length()));
-        if (page == null) throw new IOException("No preview for this link");
+        if (page == null) {
+            throw new IOException("No preview for this link");
+        }
 
         String image = cached(page, System.currentTimeMillis());
         if (image == null) {
-            image = findImage(chain, page); // IOException (transient) propagates uncached
+            // Let transient failures propagate without caching them.
+            image = findImage(chain, page);
             remember(page, image, System.currentTimeMillis());
         }
-        if (image == null || image.isEmpty()) throw new IOException("No preview image for " + page);
+        if (image == null || image.isEmpty()) {
+            throw new IOException("No preview image for " + page);
+        }
 
         Response response;
         try {
@@ -242,7 +303,7 @@ public final class FixLinkPreviewsPatch implements Interceptor {
         String type = response.header("Content-Type", "");
         if (!response.isSuccessful() || !type.toLowerCase(Locale.ROOT).startsWith("image/")) {
             response.close();
-            // e.g. an expired signed og:image URL: look the page up again next time.
+            // A fresh page lookup may yield a working image URL after a signed URL expires.
             forget(page);
             throw new IOException("Preview image failed: " + response.code() + " " + type);
         }
@@ -251,7 +312,8 @@ public final class FixLinkPreviewsPatch implements Interceptor {
         try {
             bytes = readCapped(response, MAX_IMAGE_BYTES);
         } catch (IOException e) {
-            remember(page, null, System.currentTimeMillis());   // too large: don't retry it
+            // Cache failures during the bounded read so large images are not fetched repeatedly.
+            remember(page, null, System.currentTimeMillis());
             throw e;
         }
         // Glide caches by its own key; hand back the image as the answer to the original request.
@@ -265,20 +327,31 @@ public final class FixLinkPreviewsPatch implements Interceptor {
     static byte[] readCapped(Response response, int max) throws IOException {
         try (Response r = response) {
             ResponseBody body = r.body();
-            if (body == null) throw new IOException("Preview image has no body");
+            if (body == null) {
+                throw new IOException("Preview image has no body");
+            }
             long declared = body.contentLength();
             String header = r.header("Content-Length");
             if (header != null) {
-                try { declared = Math.max(declared, Long.parseLong(header.trim())); } catch (NumberFormatException ignored) { }
+                try {
+                    declared = Math.max(declared, Long.parseLong(header.trim()));
+                } catch (NumberFormatException ignored) {
+                    // The read still enforces the byte limit.
+                }
             }
             // Reject early when the size is declared; otherwise the read below enforces the cap.
-            if (declared > max) throw new IOException("Preview image too large: " + declared + " bytes");
-            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream(declared > 0 ? (int) Math.min(declared, max) : 64 * 1024);
+            if (declared > max) {
+                throw new IOException("Preview image too large: " + declared + " bytes");
+            }
+            ByteArrayOutputStream out = new ByteArrayOutputStream(
+                    declared > 0 ? (int) Math.min(declared, max) : 64 * 1024);
             byte[] buffer = new byte[16 * 1024];
             InputStream in = body.byteStream();
             int read;
             while ((read = in.read(buffer)) != -1) {
-                if (out.size() + read > max) throw new IOException("Preview image too large: over " + max + " bytes");
+                if (out.size() + read > max) {
+                    throw new IOException("Preview image too large: over " + max + " bytes");
+                }
                 out.write(buffer, 0, read);
             }
             return out.toByteArray();
@@ -287,16 +360,24 @@ public final class FixLinkPreviewsPatch implements Interceptor {
 
     /** Maps the proxy's url= value to the page to scrape, or null when there's nothing to preview. */
     static String pageFor(String value) {
-        if (value == null || value.isEmpty()) return null;
+        if (value == null || value.isEmpty()) {
+            return null;
+        }
         if (value.startsWith("imgur-album-")) {
             String id = value.substring("imgur-album-".length());
             return id.matches("[A-Za-z0-9]+") ? "https://imgur.com/a/" + id : null;
         }
         // Gfycat is gone; Redgifs needs its own API (handled by the Redgifs patch for playback).
-        if (value.startsWith("gfycat-") || value.startsWith("redgifs-")) return null;
-        if (!value.startsWith("https://") && !value.startsWith("http://")) return null;
+        if (value.startsWith("gfycat-") || value.startsWith("redgifs-")) {
+            return null;
+        }
+        if (!value.startsWith("https://") && !value.startsWith("http://")) {
+            return null;
+        }
         String host = host(value);
-        if (host == null || host.equals("gfycat.com") || host.endsWith(".gfycat.com")) return null;
+        if (host == null || host.equals("gfycat.com") || host.endsWith(".gfycat.com")) {
+            return null;
+        }
         return value;
     }
 
@@ -321,21 +402,27 @@ public final class FixLinkPreviewsPatch implements Interceptor {
         try (Response response = fetch(chain, get(page)
                 .header("Accept", "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5").build())) {
             ResponseBody body = response.body();
-            if (response.code() >= 500 || response.code() == 429) throw new IOException("HTTP " + response.code());
-            if (!response.isSuccessful() || body == null) return null;
+            if (response.code() >= 500 || response.code() == 429) {
+                throw new IOException("HTTP " + response.code());
+            }
+            if (!response.isSuccessful() || body == null) {
+                return null;
+            }
             String type = response.header("Content-Type", "").toLowerCase(Locale.ROOT);
             // A direct image link previews as itself.
-            if (type.startsWith("image/")) return page;
-            if (!type.isEmpty() && !type.contains("html")) return null;
+            if (type.startsWith("image/")) {
+                return page;
+            }
+            if (!type.isEmpty() && !type.contains("html")) {
+                return null;
+            }
             String html = readPrefix(body.byteStream());
             return resolve(response.request().url().toString(), extractImage(html));
-        } catch (java.net.UnknownServiceException e) {
-            return null; // cleartext http:// blocked by the network security policy: permanent
-        } catch (UnknownHostException e) {
-            return null; // includes PUBLIC_ONLY_DNS refusing a private address: permanent
-        } catch (IOException e) {
-            throw e;
-        } catch (Exception e) {
+        } catch (UnknownServiceException | UnknownHostException ignored) {
+            // Cache cleartext policy refusals and failed host lookups, including private DNS results.
+            return null;
+        } catch (RuntimeException ex) {
+            Logger.printException(() -> "Could not extract an image for the link preview", ex);
             return null;
         }
     }
@@ -345,41 +432,57 @@ public final class FixLinkPreviewsPatch implements Interceptor {
         int total = 0;
         while (total < buffer.length) {
             int read = in.read(buffer, total, buffer.length - total);
-            if (read < 0) break;
+            if (read < 0) {
+                break;
+            }
             total += read;
             // og tags live in <head>; stop once it's over.
             if (total > 2048 && new String(buffer, Math.max(0, total - read - 8), read + Math.min(8, total - read),
-                    StandardCharsets.ISO_8859_1).toLowerCase(Locale.ROOT).contains("</head>")) break;
+                    StandardCharsets.ISO_8859_1).toLowerCase(Locale.ROOT).contains("</head>")) {
+                        break;
+                    }
         }
         return new String(buffer, 0, total, StandardCharsets.UTF_8);
     }
 
     /** Public for the JVM test harness. Returns the best og/twitter image URL in the HTML, or null. */
     public static String extractImage(String html) {
-        if (html == null) return null;
+        if (html == null) {
+            return null;
+        }
         Map<String, String> found = new LinkedHashMap<>();
         Matcher meta = META.matcher(html);
         while (meta.find()) {
-            String key = null, content = null;
+            String key = null;
+            String content = null;
             Matcher attr = ATTR.matcher(meta.group());
             while (attr.find()) {
                 String name = attr.group(1).toLowerCase(Locale.ROOT);
                 String value = attr.group(3) != null ? attr.group(3) : attr.group(4) != null ? attr.group(4) : attr.group(5);
-                if (name.equals("property") || name.equals("name") || name.equals("itemprop")) key = value.toLowerCase(Locale.ROOT).trim();
-                else if (name.equals("content")) content = value.trim();
+                if (name.equals("property") || name.equals("name") || name.equals("itemprop")) {
+                    key = value.toLowerCase(Locale.ROOT).trim();
+                } else if (name.equals("content")) {
+                    content = value.trim();
+                }
             }
-            if (key != null && content != null && !content.isEmpty() && !found.containsKey(key)) found.put(key, content);
+            if (key != null && content != null && !content.isEmpty() && !found.containsKey(key)) {
+                found.put(key, content);
+            }
         }
         for (String key : KEYS) {
             String value = found.get(key);
-            if (value != null) return unescape(value);
+            if (value != null) {
+                return unescape(value);
+            }
         }
         return null;
     }
 
     /** Public for the JVM test harness. */
     public static String resolve(String base, String image) {
-        if (image == null) return null;
+        if (image == null) {
+            return null;
+        }
         try {
             String resolved = URI.create(base).resolve(image.replace(" ", "%20")).toString();
             return resolved.startsWith("https://") || resolved.startsWith("http://") ? resolved : null;

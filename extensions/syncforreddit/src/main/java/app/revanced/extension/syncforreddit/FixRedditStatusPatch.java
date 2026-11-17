@@ -8,11 +8,16 @@ import org.json.JSONObject;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
+
+import app.revanced.extension.shared.Logger;
+import app.revanced.extension.shared.Utils;
 
 /**
  * Sync polls reddit.statuspage.io at startup and shows "The Reddit servers are having issues" whenever
@@ -20,9 +25,8 @@ import java.util.regex.Pattern;
  * Reddit's own iOS app, for example). Instead: only unresolved incidents that can affect Sync count,
  * and the sheet says what is wrong. An incident is shown again when Reddit posts a new update to it,
  * or after {@link #RESHOW_MS} while it stays unresolved.
- *
- * @noinspection unused
  */
+@SuppressWarnings("unused")
 public final class FixRedditStatusPatch {
     private static final String PREFS = "revanced_reddit_status";
     private static final String SHOWN = "shown";
@@ -32,10 +36,10 @@ public final class FixRedditStatusPatch {
     private static final Pattern OTHER_CLIENT = Pattern.compile(
             "(?i)\\b(ios|iphone|ipad|apple|android app|desktop|mobile web|old reddit|new reddit|shreddit|reddit app)\\b");
     /** Components about Reddit's own clients or internals; they alone don't show that the API is affected. */
-    private static final List<String> CLIENT_ONLY = java.util.Arrays.asList(
+    private static final List<String> CLIENT_ONLY = Arrays.asList(
             "Desktop Web", "Mobile Web", "Native Mobile Apps", "Spam Processing");
     /** Components that never affect a third-party client. */
-    private static final List<String> IRRELEVANT = java.util.Arrays.asList("Desktop Web", "Mobile Web", "Spam Processing");
+    private static final List<String> IRRELEVANT = Arrays.asList("Desktop Web", "Mobile Web", "Spam Processing");
 
     private static volatile String details;
     /** The incident found by the last check, recorded as shown only once its sheet is displayed. */
@@ -43,34 +47,44 @@ public final class FixRedditStatusPatch {
     private static volatile JSONObject pendingShown;
     private static volatile long pendingAt;
 
-    private FixRedditStatusPatch() {}
+    private FixRedditStatusPatch() {
+    }
 
-    /** Returns whether the response indicates a healthy service, suppressing the outage sheet. Never throws. */
+    /** Injection point. Returns whether the response indicates a healthy service, suppressing the outage sheet. Never throws. */
     public static boolean healthy(String body) {
         try {
             long now = System.currentTimeMillis();
             JSONObject shown = shown();
             JSONObject incident = relevantIncident(new JSONObject(body).getJSONArray("incidents"), shown, now);
-            if (incident == null) return true;
+            if (incident == null) {
+                return true;
+            }
             details = describe(incident, now);
             pendingShown = shown;
             pendingAt = now;
-            pending = incident;   // remembered in message(), when the sheet is actually built
+            // Record the incident only when Sync builds the sheet.
+            pending = incident;
             return false;
-        } catch (Exception e) {
-            return true;   // unreadable status page: say nothing rather than alarm
+        } catch (Exception ex) {
+            Logger.printException(() -> "Could not read the Reddit status response", ex);
+            return true;
         }
     }
 
-    /** The sheet's message: the incident's details, or Sync's own text. */
+    /** Injection point. The sheet's message: the incident's details, or Sync's own text. */
     public static String message(String original) {
-        String d = details;
-        JSONObject inc = pending;
-        if (inc != null) {
-            pending = null;
-            remember(pendingShown, inc, pendingAt);
+        try {
+            String d = details;
+            JSONObject inc = pending;
+            if (inc != null) {
+                pending = null;
+                remember(pendingShown, inc, pendingAt);
+            }
+            return d != null ? d : original;
+        } catch (Exception ex) {
+            Logger.printException(() -> "Could not prepare the Reddit incident message", ex);
+            return original;
         }
-        return d != null ? d : original;
     }
 
     /**
@@ -80,11 +94,17 @@ public final class FixRedditStatusPatch {
     static JSONObject relevantIncident(JSONArray incidents, JSONObject shown, long now) {
         for (int i = 0; i < incidents.length(); i++) {
             JSONObject inc = incidents.optJSONObject(i);
-            if (inc == null || !unresolved(inc)) continue;
+            if (inc == null || !unresolved(inc)) {
+                continue;
+            }
             JSONObject seen = shown.optJSONObject(inc.optString("id"));
             if (seen != null && seen.optString("u").equals(latestUpdateId(inc))
-                    && now - seen.optLong("t") < RESHOW_MS) continue;
-            if (affectsSync(inc)) return inc;
+                    && now - seen.optLong("t") < RESHOW_MS) {
+                continue;
+            }
+            if (affectsSync(inc)) {
+                return inc;
+            }
         }
         return null;
     }
@@ -102,13 +122,21 @@ public final class FixRedditStatusPatch {
             for (int c = 0; c < comps.length(); c++) {
                 JSONObject comp = comps.optJSONObject(c);
                 String name = comp == null ? "" : comp.optString("name");
-                if (!name.isEmpty() && !CLIENT_ONLY.contains(name)) return true;
-                if (!IRRELEVANT.contains(name)) webOnly = false;
+                if (!name.isEmpty() && !CLIENT_ONLY.contains(name)) {
+                    return true;
+                }
+                if (!IRRELEVANT.contains(name)) {
+                    webOnly = false;
+                }
             }
         }
         String impact = inc.optString("impact");
-        if (impact.equals("major") || impact.equals("critical")) return true;
-        if (webOnly) return false;
+        if (impact.equals("major") || impact.equals("critical")) {
+            return true;
+        }
+        if (webOnly) {
+            return false;
+        }
         return !OTHER_CLIENT.matcher(inc.optString("name")).find();
     }
 
@@ -123,25 +151,37 @@ public final class FixRedditStatusPatch {
         StringBuilder sb = new StringBuilder(inc.optString("name", "Reddit incident").trim());
         List<String> facts = new ArrayList<>();
         String impact = inc.optString("impact");
-        if (!impact.isEmpty() && !impact.equals("none")) facts.add(impact + " impact");
+        if (!impact.isEmpty() && !impact.equals("none")) {
+            facts.add(impact + " impact");
+        }
         String status = inc.optString("status");
-        if (!status.isEmpty()) facts.add(status);
-        if (!facts.isEmpty()) sb.append(" (").append(join(facts)).append(')');
+        if (!status.isEmpty()) {
+            facts.add(status);
+        }
+        if (!facts.isEmpty()) {
+            sb.append(" (").append(join(facts)).append(')');
+        }
         JSONArray comps = inc.optJSONArray("components");
-        if (comps != null && comps.length() > 0) {
+        if (comps != null) {
             LinkedHashSet<String> names = new LinkedHashSet<>();
             for (int c = 0; c < comps.length(); c++) {
                 JSONObject comp = comps.optJSONObject(c);
-                if (comp != null && !comp.optString("name").isEmpty()) names.add(comp.optString("name"));
+                if (comp != null && !comp.optString("name").isEmpty()) {
+                    names.add(comp.optString("name"));
+                }
             }
-            if (!names.isEmpty()) sb.append("\nAffected: ").append(join(names));
+            if (!names.isEmpty()) {
+                sb.append("\nAffected: ").append(join(names));
+            }
         }
         JSONArray updates = inc.optJSONArray("incident_updates");
-        JSONObject latest = updates != null && updates.length() > 0 ? updates.optJSONObject(0) : null;
+        JSONObject latest = updates == null ? null : updates.optJSONObject(0);
         String when = ago(latest != null ? latest.optString("created_at") : inc.optString("created_at"), now);
         if (latest != null && !latest.optString("body").trim().isEmpty()) {
             String text = latest.optString("body").trim();
-            if (text.length() > 400) text = text.substring(0, 397) + "…";
+            if (text.length() > 400) {
+                text = text.substring(0, 397) + "…";
+            }
             sb.append("\n\nLatest update").append(when.isEmpty() ? "" : ", " + when).append(": ").append(text);
         } else if (!when.isEmpty()) {
             sb.append("\nStarted ").append(when);
@@ -152,50 +192,61 @@ public final class FixRedditStatusPatch {
 
     /** "5 min ago" / "3 h ago" / "2 d ago" from an ISO-8601 time with offset, or "". */
     static String ago(String iso, long now) {
-        if (iso == null || iso.isEmpty()) return "";
-        // 2026-11-16T02:02:29.579-08:00 -> 2026-11-16T02:02:29-0800 (the XXX pattern needs API 24).
-        String t = iso.replaceAll("\\.\\d+", "").replaceAll("Z$", "+0000").replaceAll("([+-]\\d\\d):(\\d\\d)$", "$1$2");
-        try {
-            Date d = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ", Locale.US).parse(t);
-            if (d != null) {
-                long min = Math.max(0, (now - d.getTime()) / 60000);
-                if (min < 1) return "just now";
-                if (min < 60) return min + " min ago";
-                if (min < 48 * 60) return (min / 60) + " h ago";
-                return (min / 1440) + " d ago";
-            }
-        } catch (Exception ignored) {
-            // unparseable: no age
+        if (iso == null || iso.isEmpty()) {
+            return "";
         }
-        return "";
+        // Normalize the offset because the XXX date pattern requires API 24.
+        String timestamp = iso.replaceAll("\\.\\d+", "").replaceAll("Z$", "+0000")
+                .replaceAll("([+-]\\d\\d):(\\d\\d)$", "$1$2");
+        try {
+            Date date = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ", Locale.US).parse(timestamp);
+            long minutes = Math.max(0, (now - date.getTime()) / 60000);
+            if (minutes < 1) {
+                return "just now";
+            }
+            if (minutes < 60) {
+                return minutes + " min ago";
+            }
+            if (minutes < 48 * 60) {
+                return (minutes / 60) + " h ago";
+            }
+            return (minutes / 1440) + " d ago";
+        } catch (Exception ignored) {
+            // Omit the age when Reddit supplies an unreadable timestamp.
+            return "";
+        }
     }
 
     private static String join(Iterable<String> parts) {
         StringBuilder sb = new StringBuilder();
-        for (String p : parts) sb.append(sb.length() == 0 ? "" : ", ").append(p);
+        for (String p : parts) {
+            sb.append(sb.length() == 0 ? "" : ", ").append(p);
+        }
         return sb.toString();
     }
 
     static String latestUpdateId(JSONObject inc) {
         JSONArray updates = inc.optJSONArray("incident_updates");
-        JSONObject latest = updates != null && updates.length() > 0 ? updates.optJSONObject(0) : null;
+        JSONObject latest = updates == null ? null : updates.optJSONObject(0);
         return latest != null ? latest.optString("id") : "";
     }
 
     private static SharedPreferences prefs() {
         try {
-            Context c = (Context) Class.forName("android.app.ActivityThread").getMethod("currentApplication").invoke(null);
-            return c == null ? null : c.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        } catch (Throwable e) {
-            return null;   // no app context (unit tests): nothing is remembered
+            Context context = Utils.getContext();
+            return context == null ? null : context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        } catch (Throwable ex) {
+            Logger.printException(() -> "Could not open the Reddit status preferences", ex);
+            return null;
         }
     }
 
     private static JSONObject shown() {
-        SharedPreferences p = prefs();
+        SharedPreferences preferences = prefs();
         try {
-            return new JSONObject(p == null ? "{}" : p.getString(SHOWN, "{}"));
-        } catch (Exception e) {
+            return preferences == null ? new JSONObject() : new JSONObject(preferences.getString(SHOWN, "{}"));
+        } catch (Exception ex) {
+            Logger.printException(() -> "Could not read the previously shown Reddit incidents", ex);
             return new JSONObject();
         }
     }
@@ -204,22 +255,27 @@ public final class FixRedditStatusPatch {
     static JSONObject record(JSONObject shown, JSONObject inc, long now) {
         try {
             JSONObject out = new JSONObject();
-            java.util.Iterator<String> keys = shown.keys();
+            Iterator<String> keys = shown.keys();
             while (keys.hasNext()) {
                 String k = keys.next();
                 JSONObject v = shown.optJSONObject(k);
-                if (v != null && now - v.optLong("t") < 7 * 24 * 3600 * 1000L) out.put(k, v);
+                if (v != null && now - v.optLong("t") < 7 * 24 * 3600 * 1000L) {
+                    out.put(k, v);
+                }
             }
             out.put(inc.optString("id"), new JSONObject().put("u", latestUpdateId(inc)).put("t", now));
             return out;
-        } catch (Exception e) {
+        } catch (Exception ex) {
+            Logger.printException(() -> "Could not record the Reddit incident", ex);
             return shown;
         }
     }
 
     private static void remember(JSONObject shown, JSONObject inc, long now) {
         SharedPreferences p = prefs();
-        if (p == null || inc.optString("id").isEmpty()) return;
+        if (p == null || inc.optString("id").isEmpty()) {
+            return;
+        }
         p.edit().putString(SHOWN, record(shown, inc, now).toString()).apply();
     }
 }

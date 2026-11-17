@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import app.revanced.extension.shared.Logger;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -42,9 +43,8 @@ import okhttp3.Response;
  * it is fetched here with the reddit.com referer, its CSP header is dropped and a script is injected
  * that removes ad placements from the player data (initial response, fetch and JSON.parse), so the
  * player has no ads to show; requests to ad and ad-tracking hosts are refused as a backstop.
- *
- * @noinspection unused
  */
+@SuppressWarnings("unused")
 public final class YouTubeWebPlayer {
     private static final String SERVICE_ACTION = "com.google.android.youtube.api.service.START";
     private static final String ERROR_TAG = "SYNC_YT_ERROR:";
@@ -55,7 +55,8 @@ public final class YouTubeWebPlayer {
     private static final String REFERER = "https://www.reddit.com/";
     private static volatile OkHttpClient client;
 
-    private YouTubeWebPlayer() {}
+    private YouTubeWebPlayer() {
+    }
 
     /** Replaced at patch time with the "Block YouTube ads" option. */
     public static boolean blockAds() {
@@ -117,18 +118,24 @@ public final class YouTubeWebPlayer {
         int head = html.toLowerCase(Locale.ROOT).indexOf("<head");
         if (head >= 0) {
             int end = html.indexOf('>', head);
-            if (end > 0) return html.substring(0, end + 1) + tag + html.substring(end + 1);
+            if (end > 0) {
+                return html.substring(0, end + 1) + tag + html.substring(end + 1);
+            }
         }
         return tag + html;
     }
 
     /** Ad serving and ad tracking requests (never the video itself). */
     static boolean isAdRequest(String host, String path) {
-        if (host == null) return false;
+        if (host == null) {
+            return false;
+        }
         host = host.toLowerCase(Locale.ROOT);
         path = path == null ? "" : path;
         if (host.endsWith("doubleclick.net") || host.endsWith("googlesyndication.com")
-                || host.endsWith("googleadservices.com") || host.equals("imasdk.googleapis.com")) return true;
+                || host.endsWith("googleadservices.com") || host.equals("imasdk.googleapis.com")) {
+            return true;
+        }
         boolean yt = host.equals("youtube.com") || host.endsWith(".youtube.com");
         return yt && (path.startsWith("/pagead/") || path.startsWith("/api/stats/ads") || path.startsWith("/ptracking")
                 || path.startsWith("/get_midroll_info") || path.startsWith("/pcs/activeview")
@@ -143,7 +150,9 @@ public final class YouTubeWebPlayer {
     private static OkHttpClient client() {
         if (client == null) {
             synchronized (YouTubeWebPlayer.class) {
-                if (client == null) client = new OkHttpClient();
+                if (client == null) {
+                    client = new OkHttpClient();
+                }
             }
         }
         return client;
@@ -157,36 +166,48 @@ public final class YouTubeWebPlayer {
     private static WebResourceResponse injectedEmbedPage(String url, String userAgent) {
         try (Response r = client().newCall(new Request.Builder().url(url)
                 .header("Referer", REFERER).header("User-Agent", userAgent).build()).execute()) {
-            if (r.body() == null) return null;
+            if (r.body() == null) {
+                return null;
+            }
             String html = inject(r.body().string());
-            android.util.Log.i("SyncYouTube", "ad-free embed page loaded (" + r.code() + ")");
+            Logger.printInfo(() -> "ad-free embed page loaded (" + r.code() + ")");
             Map<String, String> headers = new HashMap<>();
             for (String name : r.headers().names()) {
                 String n = name.toLowerCase(Locale.ROOT);
                 if (n.startsWith("content-security-policy") || n.equals("content-length") || n.equals("content-encoding")
-                        || n.equals("transfer-encoding") || n.equals("content-type")) continue;
+                        || n.equals("transfer-encoding") || n.equals("content-type")) {
+                    continue;
+                }
                 headers.put(name, r.header(name));
             }
             String reason = r.message().isEmpty() ? "OK" : r.message();
             return new WebResourceResponse("text/html", "utf-8", r.code(), reason, headers,
                     new ByteArrayInputStream(html.getBytes(StandardCharsets.UTF_8)));
-        } catch (Exception e) {
-            return null;   // let the WebView load it normally (with ads)
+        } catch (Exception ex) {
+            Logger.printException(() -> "Could not load the ad-free YouTube embed page", ex);
+            // Let the WebView load the original embed page.
+            return null;
         }
     }
 
     /** The 11-character video id of a YouTube URL, or null. */
     static String videoId(String url) {
-        if (url == null) return null;
+        if (url == null) {
+            return null;
+        }
         Matcher m = ID.matcher(url.replace("&amp;", "&"));
         return m.find() ? m.group(1) : null;
     }
 
     /** Start offset in seconds from t=/start= (90, 1m30s, 1h2m3s), or 0; never throws, capped at a day. */
     static int startSeconds(String url) {
-        if (url == null) return 0;
+        if (url == null) {
+            return 0;
+        }
         Matcher m = T.matcher(url.replace("&amp;", "&"));
-        if (!m.find()) return 0;
+        if (!m.find()) {
+            return 0;
+        }
         String t = m.group(1).toLowerCase(Locale.ROOT);
         long total = 0;
         try {
@@ -199,8 +220,9 @@ public final class YouTubeWebPlayer {
                     total += part.group(2).equals("h") ? n * 3600 : part.group(2).equals("m") ? n * 60 : n;
                 }
             }
-        } catch (NumberFormatException e) {
-            return 0;   // absurd values (more digits than a long): start at the beginning
+        } catch (NumberFormatException ignored) {
+            // Out-of-range offsets start playback at the beginning.
+            return 0;
         }
         return (int) Math.max(0, Math.min(total, 86_400));
     }
@@ -222,7 +244,8 @@ public final class YouTubeWebPlayer {
         try {
             Intent intent = new Intent(SERVICE_ACTION).setPackage("com.google.android.youtube");
             return !activity.getPackageManager().queryIntentServices(intent, 0).isEmpty();
-        } catch (Exception e) {
+        } catch (Exception ex) {
+            Logger.printException(() -> "Could not check for the YouTube player service", ex);
             return false;
         }
     }
@@ -230,7 +253,7 @@ public final class YouTubeWebPlayer {
     /** Lifecycle state shared by the clients: fallbacks fire once, and only while the screen is in front. */
     static final class State {
         boolean resumed = true;
-        boolean done;   // fallback taken or activity destroyed
+        boolean done;
 
         boolean mayLeave(Activity activity) {
             return !done && resumed && !activity.isFinishing() && !activity.isDestroyed();
@@ -240,22 +263,37 @@ public final class YouTubeWebPlayer {
     static void openExternally(Activity activity, String url) {
         try {
             activity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-        } catch (Exception ignored) {
-            // nothing can open it
+        } catch (Exception ex) {
+            Logger.printException(() -> "Could not open the YouTube video externally", ex);
         }
         activity.finish();
     }
 
     /**
-     * Called first in CustomYouTubeVideoActivity's player setup. True = the web player took over, so
-     * Sync must not initialize Google's player. False = the Player API service exists: Sync's own path.
+     * Injection point.
+     * Returns whether the web player took over, allowing Sync to skip initialization of Google's player.
      */
     @SuppressLint("SetJavaScriptEnabled")
     public static boolean show(Activity activity) {
-        if (playerServiceAvailable(activity)) return false;
-        String url = activity.getIntent() == null ? null : activity.getIntent().getStringExtra("url");
+        try {
+            return showPlayer(activity);
+        } catch (Exception ex) {
+            Logger.printException(() -> "Could not show the YouTube web player", ex);
+            return false;
+        }
+    }
+
+    private static boolean showPlayer(Activity activity) {
+        if (playerServiceAvailable(activity)) {
+            return false;
+        }
+        Intent intent = activity.getIntent();
+        String url = intent == null ? null : intent.getStringExtra("url");
         String id = videoId(url);
-        if (id == null) return false;   // Sync shows "Invalid ID"
+        if (id == null) {
+            // Let Sync report its usual invalid ID error.
+            return false;
+        }
 
         State state = new State();
         FrameLayout root = new FrameLayout(activity);
@@ -274,11 +312,16 @@ public final class YouTubeWebPlayer {
         web.setWebViewClient(new WebViewClient() {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                if (!adFree) return null;
+                if (!adFree) {
+                    return null;
+                }
                 Uri u = request.getUrl();
-                if (isAdRequest(u.getHost(), u.getPath())) return empty();
-                if (request.isForMainFrame() && "GET".equals(request.getMethod()) && isEmbedPage(u))
+                if (isAdRequest(u.getHost(), u.getPath())) {
+                    return empty();
+                }
+                if (request.isForMainFrame() && "GET".equals(request.getMethod()) && isEmbedPage(u)) {
                     return injectedEmbedPage(u.toString(), userAgent);
+                }
                 return null;
             }
 
@@ -301,7 +344,10 @@ public final class YouTubeWebPlayer {
 
             @Override
             public void onShowCustomView(View view, CustomViewCallback cb) {
-                if (fullscreen != null) { cb.onCustomViewHidden(); return; }
+                if (fullscreen != null) {
+                    cb.onCustomViewHidden();
+                    return;
+                }
                 fullscreen = view;
                 callback = cb;
                 root.addView(view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -311,12 +357,16 @@ public final class YouTubeWebPlayer {
 
             @Override
             public void onHideCustomView() {
-                if (fullscreen == null) return;
+                if (fullscreen == null) {
+                    return;
+                }
                 root.removeView(fullscreen);
                 fullscreen = null;
                 web.setVisibility(View.VISIBLE);
                 activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-                if (callback != null) callback.onCustomViewHidden();
+                if (callback != null) {
+                    callback.onCustomViewHidden();
+                }
                 callback = null;
             }
 
@@ -354,20 +404,31 @@ public final class YouTubeWebPlayer {
     private static void tieToLifecycle(Activity activity, WebView web, State state) {
         Application app = activity.getApplication();
         app.registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks() {
-            @Override public void onActivityPaused(Activity a) {
-                if (a != activity) return;
+            @Override
+            public void onActivityPaused(Activity a) {
+                if (a != activity) {
+                    return;
+                }
                 state.resumed = false;
                 // WebView.onPause doesn't stop JavaScript; pause the video through the player API too.
                 web.evaluateJavascript("window.player&&window.player.pauseVideo&&window.player.pauseVideo()", null);
                 web.onPause();
             }
-            @Override public void onActivityResumed(Activity a) {
-                if (a != activity) return;
+
+            @Override
+            public void onActivityResumed(Activity a) {
+                if (a != activity) {
+                    return;
+                }
                 state.resumed = true;
                 web.onResume();
             }
-            @Override public void onActivityDestroyed(Activity a) {
-                if (a != activity) return;
+
+            @Override
+            public void onActivityDestroyed(Activity a) {
+                if (a != activity) {
+                    return;
+                }
                 state.done = true;
                 app.unregisterActivityLifecycleCallbacks(this);
                 // Detach callbacks before tearing down, so late page events can't reach a dead activity.
@@ -377,10 +438,22 @@ public final class YouTubeWebPlayer {
                 web.loadUrl("about:blank");
                 web.destroy();
             }
-            @Override public void onActivityCreated(Activity a, Bundle b) { }
-            @Override public void onActivityStarted(Activity a) { }
-            @Override public void onActivityStopped(Activity a) { }
-            @Override public void onActivitySaveInstanceState(Activity a, Bundle b) { }
+
+            @Override
+            public void onActivityCreated(Activity a, Bundle b) {
+            }
+
+            @Override
+            public void onActivityStarted(Activity a) {
+            }
+
+            @Override
+            public void onActivityStopped(Activity a) {
+            }
+
+            @Override
+            public void onActivitySaveInstanceState(Activity a, Bundle b) {
+            }
         });
     }
 }

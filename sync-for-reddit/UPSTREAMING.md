@@ -13,6 +13,15 @@ project, its merge-request history and `CONTRIBUTING.md`; re-check before submit
 - Asking in the ReVanced Discord `#development` channel first is common and recommended for big MRs.
 - One maintainer reviews and merges nearly everything (`oSumAtrIX` on GitLab); expect his style comments.
 
+## AI disclosure
+
+ReVanced has no written AI policy (checked November 2026: `CONTRIBUTING.md` and the other ReVanced repos say
+nothing). In practice contributors disclose it and such MRs are merged, e.g. the BaconReader MR !6998 with an
+"AI disclosure" section (Claude Code wrote most of the code, the author tested it), Copilot-authored !6734/!6736.
+MRs that leave checking the AI's work to the maintainer (!6973, !6987) get pushback. End each MR with a short
+"AI disclosure" section that says who directed and tested the work; the fork's draft PRs carry one. Never
+include Claude session IDs or links in commits or descriptions.
+
 ## What gets merged quickly
 
 - Small, focused fixes merge in a day or two (e.g. the Redgifs fix for the Reddit clients).
@@ -68,6 +77,8 @@ These are fork-only and should not be in an upstream MR:
 - Build the MR branch from `git cherry-pick`/`git checkout <fork> -- <paths>` of only the patch and extension
   files, so none of the fork-only paths above come along.
 - Write the MR description as a list of user-visible fixes, one line each.
+- `CONTRIBUTING.md` asks to reference the issues an MR closes: search GitLab issues for the Sync breakages each
+  MR fixes and add `Closes #…`. It also recommends opening an issue (or a Discord `#development` post) first.
 - End each MR description with a short "Testing" paragraph linking the fork's tooling
   (<https://github.com/jleider/revanced-patches/tree/main/sync-for-reddit#developing>): unit tests on recorded
   responses, an e2e scenario per patch with a negative control, the reachability check and the ART verifier.

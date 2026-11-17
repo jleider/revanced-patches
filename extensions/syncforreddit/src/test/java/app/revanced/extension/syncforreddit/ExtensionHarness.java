@@ -395,21 +395,26 @@ public final class ExtensionHarness {
     }
 
     static void tumblr() throws Exception {
-        String[] a = FixTumblrPatch.blogAndId("https://staff.tumblr.com/post/811987751056605184/some-slug");
-        check(a != null && a[0].equals("staff") && a[1].equals("811987751056605184"), "tumblr: blog.tumblr.com/post/id");
-        a = FixTumblrPatch.blogAndId("https://www.tumblr.com/markrosewater/832645643147395072/i-dont?source=share");
-        check(a != null && a[0].equals("markrosewater") && a[1].equals("832645643147395072"), "tumblr: www.tumblr.com/blog/id");
-        a = FixTumblrPatch.blogAndId("https://www.tumblr.com/blog/view/staff/811987751056605184");
-        check(a != null && a[0].equals("staff"), "tumblr: /blog/view/blog/id");
-        eq(FixTumblrPatch.blogAndId("https://evil.example/post/1"), null, "tumblr: other hosts ignored");
-        eq(FixTumblrPatch.blogAndId("https://x.tumblr.com.evil.example/post/1"), null, "tumblr: lookalike host ignored");
-        eq(FixTumblrPatch.blogAndId("https://staff.tumblr.com/post/abc"), null, "tumblr: non-numeric id ignored");
+        String url = "https://staff.tumblr.com/post/811987751056605184/some-slug";
+        check(FixTumblrPatch.apiUrl(url).startsWith("https://staff.tumblr.com/api/read/json?id=811987751056605184&"),
+                "tumblr: blog.tumblr.com/post/id");
+        url = "https://www.tumblr.com/markrosewater/832645643147395072/i-dont?source=share";
+        check(FixTumblrPatch.apiUrl(url).startsWith("https://markrosewater.tumblr.com/api/read/json?id=832645643147395072&"),
+                "tumblr: www.tumblr.com/blog/id");
+        url = "https://www.tumblr.com/blog/view/staff/811987751056605184";
+        check(FixTumblrPatch.apiUrl(url).startsWith("https://staff.tumblr.com/api/read/json?id=811987751056605184&"),
+                "tumblr: /blog/view/blog/id");
+        url = "https://evil.example/post/1";
+        eq(FixTumblrPatch.apiUrl(url), url, "tumblr: other hosts ignored");
+        url = "https://x.tumblr.com.evil.example/post/1";
+        eq(FixTumblrPatch.apiUrl(url), url, "tumblr: lookalike host ignored");
+        url = "https://staff.tumblr.com/post/abc";
+        eq(FixTumblrPatch.apiUrl(url), url, "tumblr: non-numeric id ignored");
         String api = FixTumblrPatch.apiUrl("https://staff.tumblr.com/post/811987751056605184/x");
         check(api.startsWith("https://staff.tumblr.com/api/read/json?id=811987751056605184&"), "tumblr: v1 URL " + api);
         eq(FixTumblrPatch.apiUrl("https://example.com/x"), "https://example.com/x", "tumblr: unparseable URL unchanged");
         String images = new String(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(fixtures, "tumblr_v1_images.js")), "UTF-8");
-        org.json.JSONArray photos = new org.json.JSONObject(FixTumblrPatch.convert(images, api))
-                .getJSONObject("response").getJSONArray("posts").getJSONObject(0).getJSONArray("photos");
+        org.json.JSONArray photos = tumblrPhotos(images, api);
         check(photos.length() > 0, "tumblr: images found in the post body");
         boolean big = true, small = true, unique = true;
         java.util.Set<String> seen = new java.util.HashSet<>();
@@ -428,10 +433,18 @@ public final class ExtensionHarness {
         check(threw, "tumblr: text post -> parse error (and the browser)");
         eq(FixTumblrPatch.convert("{}", "https://api.example/other"), "{}", "tumblr: other requests untouched");
         String legacy = "var tumblr_api_read = {\"posts\":[{\"type\":\"photo\",\"photo-url-1280\":\"https://64.media.tumblr.com/tumblr_abc_1280.jpg\",\"photo-url-75\":\"https://64.media.tumblr.com/tumblr_abc_75sq.jpg\",\"photo-url-500\":\"https://64.media.tumblr.com/tumblr_abc_500.jpg\",\"photos\":[]}]};";
-        java.util.List<String[]> one = FixTumblrPatch.images(legacy);
-        check(one.size() == 1 && one.get(0)[0].endsWith("_1280.jpg") && one.get(0)[1].endsWith("_75sq.jpg"), "tumblr: legacy photo post");
+        org.json.JSONArray one = tumblrPhotos(legacy, api);
+        check(one.length() == 1
+                && one.getJSONObject(0).getJSONObject("original_size").getString("url").endsWith("_1280.jpg")
+                && one.getJSONObject(0).getJSONArray("alt_sizes").getJSONObject(0).getString("url").endsWith("_75sq.jpg"),
+                "tumblr: legacy photo post");
         String set = "var tumblr_api_read = {\"posts\":[{\"type\":\"photo\",\"photos\":[{\"photo-url-1280\":\"https://64.media.tumblr.com/tumblr_a_1280.jpg\",\"photo-url-100\":\"https://64.media.tumblr.com/tumblr_a_100.jpg\"},{\"photo-url-1280\":\"https://64.media.tumblr.com/tumblr_b_1280.jpg\"}]}]};";
-        check(FixTumblrPatch.images(set).size() == 2, "tumblr: legacy photoset");
+        check(tumblrPhotos(set, api).length() == 2, "tumblr: legacy photoset");
+    }
+
+    private static org.json.JSONArray tumblrPhotos(String body, String api) throws org.json.JSONException {
+        return new org.json.JSONObject(FixTumblrPatch.convert(body, api))
+                .getJSONObject("response").getJSONArray("posts").getJSONObject(0).getJSONArray("photos");
     }
 
     static void redditVideo() {

@@ -14,12 +14,17 @@ public class FixSLinksPatch extends BaseFixSLinksPatch {
         webViewActivityClass = WebViewActivity.class;
     }
 
+    /** Injection point. */
     public static boolean patchResolveSLink(String link) {
-        // The shared resolver matches ".*reddit\\.com/r/x/s/y" and sends the user's bearer token to
-        // that URL, so "https://evil.example/reddit.com/r/a/s/b" or an http:// link would leak it.
-        // Only hand it canonical HTTPS Reddit share links; anything else takes Sync's normal path.
-        String safe = SLinkGuard.safeSLink(link);
-        return safe != null && INSTANCE.resolveSLink(safe);
+        try {
+            // The shared resolver attaches the bearer token using a broad URL match.
+            // Check for a canonical HTTPS Reddit share link before handing it over.
+            String safeLink = SLinkGuard.safeSLink(link);
+            return safeLink != null && INSTANCE.resolveSLink(safeLink);
+        } catch (Exception ex) {
+            app.revanced.extension.shared.Logger.printException(() -> "Could not resolve the Reddit share link", ex);
+            return false;
+        }
     }
 
     public static void patchSetAccessToken(String accessToken) {
