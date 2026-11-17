@@ -55,7 +55,9 @@ Patches added or changed in this fork (all enabled by default unless noted):
 | Fix Redgifs API (changed) | Also answers Redgifs' removed `/info` endpoint, which broke every Redgifs video with "Error connecting to Redgifs". |
 | Fix combined subreddit feeds | `r/a+b` feeds no longer redirect to the homepage. |
 | Fix other discussions | Finds other posts of the same link through Reddit search. |
-| Fix random subreddit | Picks from Reddit's popular list; `r/random` was removed. |
+| Fix random subreddit | Picks from Reddit's popular list; `r/random` was removed. Links to `r/random` and `r/randnsfw` (from inside or outside Sync) open the random picker instead of a 404. |
+| Fix Tumblr | Opens a Tumblr post's images in the normal image viewer through Tumblr's keyless public API; Sync's API key was revoked. Posts without images open in the browser. |
+| Fix Reddit status alert | Shows "The Reddit servers are having issues" only for incidents that can affect Sync (not, say, an iOS-app login problem), with the incident name, impact, affected parts and latest update. An incident is shown again after a new update or after 6 hours. |
 | Fix DeviantArt embeds | Uses HTTPS for DeviantArt oEmbed lookups. |
 | Hide restore comment | Hides the dead "restore comment" action (relied on Pushshift). |
 | Upgrade connections to HTTPS | Requests `http://` URLs over HTTPS on every connection the app makes, falling back to http only for hosts without working HTTPS. |
@@ -63,7 +65,7 @@ Patches added or changed in this fork (all enabled by default unless noted):
 | Fix /s/ links (changed) | Only sends the login token to real Reddit share links over HTTPS. |
 | Enable debug logging | Off by default. Test builds only: logs can contain tokens. |
 
-Known limitations: Tumblr embeds (revoked API key), Pushshift-based features, and `r/random` deep links.
+Known limitations: Pushshift-based features (the service is gone). Logged out, the random NSFW pool depends on Reddit's search and is sometimes empty.
 
 ## Developing
 
