@@ -4,8 +4,12 @@ on:
   workflow_dispatch:
   push:
     branches:
+      # Fork releases come only from main, versioned X.Y.Z-sync.N (see .releaserc) so they never
+      # collide with upstream ReVanced's version numbers.
       - main
-      - dev
+
+env:
+  HAS_GPG_KEY: ${{ secrets.GPG_PRIVATE_KEY != '' }}
 
 jobs:
   release:
@@ -46,6 +50,8 @@ jobs:
         run: npm install
 
       - name: Import GPG key
+        # Forks without ReVanced's signing key still publish an unsigned .rvp release.
+        if: ${{ env.HAS_GPG_KEY == 'true' }}
         uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}

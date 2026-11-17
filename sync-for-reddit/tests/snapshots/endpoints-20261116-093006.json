@@ -1,0 +1,389 @@
+{
+ "taken": "2026-11-16T09:30:06.413247",
+ "results": [
+  {
+   "name": "subreddit listing /r/<sub>/hot",
+   "class": "OAuthPostsRequest",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "frontpage /hot",
+   "class": "OAuthPostsRequest",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "multi-sub listing /r/a+b/hot",
+   "class": "OAuthPostsRequest",
+   "must": false,
+   "status": 301,
+   "ok": false,
+   "note": "app-only token redirects to www (301); re-check with a user token"
+  },
+  {
+   "name": "gallery via /api/info.json (Sync y8.q)",
+   "class": "OAuthGalleryRequest(y8.q)",
+   "must": false,
+   "status": 403,
+   "ok": false,
+   "note": ""
+  },
+  {
+   "name": "gallery via /comments/<id> (patched path)",
+   "class": "patch: gallery",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": "4 items, 0 without s.u/s.mp4"
+  },
+  {
+   "name": "comments /comments/<id>",
+   "class": "OAuthCommentsRequest",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "morechildren POST (Sync y8.f)",
+   "class": "OAuthCommentsMoreRequest(y8.f)",
+   "must": false,
+   "status": 403,
+   "ok": false,
+   "note": ""
+  },
+  {
+   "name": "more via parent permalink (patched path)",
+   "class": "patch: morecomments",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "subreddit about",
+   "class": "OAuthSubredditInfoRequest",
+   "must": false,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "user about /user/<u>/about",
+   "class": "OAuthUserInfoRequest",
+   "must": false,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "user about /u/<u>/about (unpatched)",
+   "class": "OAuthUserInfoRequest",
+   "must": false,
+   "status": 301,
+   "ok": false,
+   "note": ""
+  },
+  {
+   "name": "search",
+   "class": "OAuthPostsRequest(y8.k0)",
+   "must": false,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "subreddit search",
+   "class": "OAuthPostsRequest(y8.k0)",
+   "must": false,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "wiki",
+   "class": "OAuthWikiRequest",
+   "must": false,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "duplicates (informational; Sync uses submit.json)",
+   "class": "-",
+   "must": false,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "combined subs /r/a%2Bb/hot (patch: multisub)",
+   "class": "patch: multisub",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": "aww,pics"
+  },
+  {
+   "name": "random pool /subreddits/popular (patch: random)",
+   "class": "patch: random",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": "100 subs"
+  },
+  {
+   "name": "random nsfw pool (patch: random)",
+   "class": "patch: random",
+   "must": true,
+   "status": 200,
+   "ok": false,
+   "note": "0 over18"
+  },
+  {
+   "name": "other discussions url: search (patch: duplicates)",
+   "class": "patch: duplicates",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": "2 results"
+  },
+  {
+   "name": "more batch /comments/<post>?limit=500 (patch: morecomments)",
+   "class": "patch: morecomments",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "more anchored /comments/<post>/_/<child> (patch: morecomments)",
+   "class": "patch: morecomments",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "DeviantArt oEmbed over https (patch: deviantart)",
+   "class": "patch: deviantart",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "Imgur album page og:image (patch: link previews)",
+   "class": "patch: linkpreview",
+   "must": false,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "fixture link_post (1xtenfv) live",
+   "class": "tests/fixtures",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "fixture imgur_direct (1x93ykl) live",
+   "class": "tests/fixtures",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "fixture imgur_gif (1pgzg70) live",
+   "class": "tests/fixtures",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "fixture imgur_page (1p3ce5v) live",
+   "class": "tests/fixtures",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "fixture imgur_album (1p1yczy) live",
+   "class": "tests/fixtures",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "fixture deviantart (1p4nry1) live",
+   "class": "tests/fixtures",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "fixture tenor_selftext (1xu5svk) live",
+   "class": "tests/fixtures",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "fixture imgur_album_selftext (1xxg4ow) live",
+   "class": "tests/fixtures",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "fixture gfycat_with_copy (89oo9p) live",
+   "class": "tests/fixtures",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "fixture gfycat_without_copy (7s6y7w) live",
+   "class": "tests/fixtures",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "fixture gallery (smoke/features) (1xxo3fw) live",
+   "class": "tests/fixtures",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "v.redd.it HLS playlist (native video)",
+   "class": "patch: gfycat/mp4 audio",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "v.redd.it HLS lists an audio rendition",
+   "class": "patch: gfycat/mp4 audio",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": "reddit_mp4_audio e2e depends on it"
+  },
+  {
+   "name": "v.redd.it HLS playlist (Gfycat archive)",
+   "class": "patch: gfycat/mp4 audio",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "v.redd.it CMAF_480.mp4 direct file (e2e deep link)",
+   "class": "patch: gfycat/mp4 audio",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "preview.redd.it with &amp; (as Sync sends it)",
+   "class": "Glide",
+   "must": false,
+   "status": 403,
+   "ok": false,
+   "note": "403 since 2026-11-16; Fix Reddit image URLs unescapes it"
+  },
+  {
+   "name": "preview.redd.it unescaped (patched)",
+   "class": "patch: imageurls",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "imgur proxy images.syncforreddit.com (Sync s8.d/s8.b)",
+   "class": "ImgurSingleImageRequest",
+   "must": false,
+   "status": 0,
+   "ok": false,
+   "note": "dev's proxy; expected dead"
+  },
+  {
+   "name": "imgur API (patched path)",
+   "class": "patch: imgur",
+   "must": false,
+   "status": 0,
+   "ok": false,
+   "note": "IMGUR_CLIENT_ID not set"
+  },
+  {
+   "name": "i.imgur.com direct gif",
+   "class": "-",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "i.imgur.com direct mp4",
+   "class": "-",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "gfycat API",
+   "class": "-",
+   "must": false,
+   "status": 0,
+   "ok": false,
+   "note": ""
+  },
+  {
+   "name": "streamable API",
+   "class": "-",
+   "must": false,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "redgifs temporary auth (upstream patch)",
+   "class": "-",
+   "must": false,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  },
+  {
+   "name": "giphy CDN",
+   "class": "-",
+   "must": true,
+   "status": 200,
+   "ok": true,
+   "note": ""
+  }
+ ]
+}

@@ -7,6 +7,8 @@ on:
 
 jobs:
   update:
+    # ReVanced-only (Crowdin, release PRs, wrapper bumps); forks skip it.
+    if: github.repository == 'ReVanced/revanced-patches'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

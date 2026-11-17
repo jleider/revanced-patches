@@ -1,0 +1,85 @@
+# Classes (smali paths, fnmatch globs) that patches are allowed to add or change.
+# scripts/verify_patch.sh fails on any changed/added class not matched here.
+# When a new patch legitimately touches a class, add it with the patch name and original source file.
+# Attribution of upstream patches is inferred from class purpose, not per-patch runs.
+
+# --- added code
+app/revanced/*                               # ReVanced extension code + repackaged libs (protobuf, ...)
+com/android/tools/r8/*                       # R8 desugaring helpers bundled with extensions
+
+# --- upstream: Spoof client (client id, UA, ssl->www rewrite, imgur upload URL)
+a8/a.smali                                   # OkHttpHelper (user agent)
+b9/a.smali                                   # OAuthAccessTokenRequest
+b9/b.smali                                   # OAuthLoggedOutTokenExchangeRequest
+b9/c.smali                                   # OAuthTempTokenExchangeRequest
+b9/d.smali                                   # OAuthTokenExchangeRequest
+com/laurencedawson/reddit_sync/singleton/a.smali   # AccountSingleton (bearer/basic auth)
+w8/a$a.smali                                 # OAuthLoginFragment
+w8/b.smali                                   # OAuthLoginHelper (authorize URL)
+u8/c.smali                                   # UploadImgurRequest
+
+# --- upstream: extension init / ads / piracy / lemmy sheet
+com/laurencedawson/reddit_sync/RedditApplication.smali     # extension init hook; Enable debug logging (WebView debugging)
+com/laurencedawson/reddit_sync/ui/activities/MainActivity.smali  # Lemmy bottom sheet
+l9/a.smali                                   # SyncIapHelper (ads / piracy)
+
+# --- upstream: fixes
+com/laurencedawson/reddit_sync/ui/views/images/CustomImageView.smali  # Fix post thumbnails
+y8/k0.smali                                  # OAuthPostsRequest (Fix post thumbnails)
+r8/g.smali                                   # RedditVideoRequest (Fix video downloads)
+y7/b.smali                                   # LinkHelper (Fix /s/ links, Fix Redgifs API)
+
+# --- ours: Fix login redirect (w8/b, w8/a$a already listed under Spoof client)
+
+# --- ours: Fix galleries
+y8/q.smali                                   # OAuthGalleryRequest
+com/laurencedawson/reddit_sync/ui/activities/media/MultiImageActivity.smali  # onDestroy position cache
+
+# --- ours: Fix Imgur (images.syncforreddit.com proxy is dead)
+s8/b.smali                                   # ImgurGalleryRequest (album URL + headers)
+s8/d.smali                                   # ImgurSingleImageRequest (image URL)
+com/android/volley/RequestQueue.smali        # RequestQueue.add (answer local imgur URLs without network)
+
+# --- ours: Fix loading more comments (/api/morechildren is blocked)
+y8/f.smali                                   # OAuthCommentsMoreRequest (URL + response adapter)
+ya/d.smali                                   # CommentsPresenterImpl (carry parent id with children)
+
+# --- ours: Disable telemetry ("hmmm" piracy report callable)
+com/laurencedawson/reddit_sync/ui/activities/BaseActivity.smali  # BaseActivity.p0 -> return-void
+
+# --- ours: Fix combined subreddit feeds
+x8/a.smali                                   # RedditRequest (percent-encode '+' in r/a+b paths)
+                                             # also: Fix other discussions, Fix random subreddit (URL rewrites)
+
+# --- ours: Fix random subreddit
+r8/d.smali                                   # RandomRequest (adapt subreddit list to random response)
+
+# --- ours: Fix DeviantArt embeds / Hide restore comment
+r8/a.smali                                   # CheckDeviantArtRequest (http -> https oEmbed)
+t9/s.smali                                   # CommentMoreDialogBottomSheet (skip "Restore comment" item)
+
+# --- ours: Fix link previews
+a8/a.smali                                   # OkHttpHelper.a (adds on-device og:image interceptor to Glide's client)
+                                             # (a8/a.smali is also listed under Spoof client)
+
+# --- ours: Enable debug logging (debug builds only)
+wc/i.smali                                   # Logger
+
+# --- ours: Fix Gfycat
+c9/c.smali                                   # PostParserHelper (Reddit archived MP4 + previews)
+com/laurencedawson/reddit_sync/ui/fragments/ImageViewerFragment.smali # preserve exact Reddit MP4
+lc/f.smali                                   # SimpleExoPlayerTextureView (avoid dead autoplay proxy)
+# com/android/volley/RequestQueue.smali above also: Fix Gfycat (local error delivery)
+# --- ours: Upgrade connections to HTTPS
+okhttp3/OkHttpClient$Builder.smali              # build(): append HttpsUpgradeInterceptor to every client
+# --- ours: Fix Reddit video playback
+xc/a.smali                                   # ExoplayerUtils (v.redd.it HLS -> DASH source)
+com/laurencedawson/reddit_sync/ui/views/video/CustomExoPlayerView.smali # Fix Reddit video playback (viewer source)
+com/laurencedawson/reddit_sync/ui/activities/CustomYouTubeVideoActivity.smali # Fix YouTube player
+# --- ours: Fix Reddit status alert
+r8/f.smali                                   # RedditStatusRequest (incident filter)
+t9/q1.smali                                  # RedditIsDownAlertDialogBottomSheet (incident details)
+# --- ours: Fix Tumblr
+r8/j.smali                                   # TumblrRequest (keyless v1 API)
+# --- ours: Fix random subreddit (links); MainActivity also listed above for the Lemmy sheet
+y7/a.smali                                   # LinkHandler (r/randnsfw name, non-Sync context)
