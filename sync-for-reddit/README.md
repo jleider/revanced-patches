@@ -44,7 +44,7 @@ Patches added or changed in this fork (all enabled by default unless noted):
 | Patch | What it does |
 |---|---|
 | Fix galleries | Loads galleries through `/comments/` because Reddit blocks `/api/info`. |
-| Fix load more comments | Loads hidden comments through comment permalinks; `morechildren` is blocked. |
+| Fix loading more comments | Loads hidden comments through comment permalinks; `morechildren` is blocked. |
 | Fix login redirect | Login no longer lands on the Reddit homepage. |
 | Fix Imgur | Builds direct image links locally; albums load from Imgur's public embed page. No API key. |
 | Fix Gfycat | Plays Reddit's archived copies of Gfycat videos (with audio), fails fast when none exists. |
@@ -123,3 +123,10 @@ Omit `SYNC_EMULATORS` for automatic hardware sizing (up to four instances). The 
 running until `down`; logs and screenshots are under `out/emulators/`. To run on one explicitly
 selected emulator, unset `SYNC_EMULATORS` and set `ANDROID_SERIAL=emulator-NNNN`.
 See `CLAUDE.md` for verification stages, caches, device guards and timing output.
+
+## Credits
+
+- Upstream ReVanced patches and the original Sync patches by the ReVanced contributors.
+- `Fix galleries` and `Fix loading more comments` consolidate ideas from upstream merge requests !6999 by
+  Bryan Ulate (patch name, permalink approach, credited there to RedReader) and !7000 by 0naught (gallery
+  validation and test cases).

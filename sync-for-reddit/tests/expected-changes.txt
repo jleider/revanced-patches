@@ -40,7 +40,7 @@ s8/b.smali                                   # ImgurGalleryRequest (album URL + 
 s8/d.smali                                   # ImgurSingleImageRequest (image URL)
 com/android/volley/RequestQueue.smali        # RequestQueue.add (answer local imgur URLs without network)
 
-# --- ours: Fix load more comments (/api/morechildren is blocked)
+# --- ours: Fix loading more comments (/api/morechildren is blocked)
 y8/f.smali                                   # OAuthCommentsMoreRequest (URL + response adapter)
 ya/d.smali                                   # CommentsPresenterImpl (carry parent id with children)
 

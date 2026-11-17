@@ -37,6 +37,7 @@ public final class ExtensionHarness {
         redditVideo();
         redgifsInfo();
         redditStatus();
+        moreCommentsFailureKeepsRow();
         tumblr();
         youTube();
         previewSafety();
@@ -118,6 +119,15 @@ public final class ExtensionHarness {
         check(!junk.contains("javascript"), "dupes: malformed after dropped");
     }
 
+    // The partial-failure case 0naught raised on upstream MR !6999: a failed request must not consume
+    // the "load more" row. Each of our requests is all-or-nothing; an error body is handed back
+    // unchanged so Sync's parser rejects it and keeps the row for a retry.
+    static void moreCommentsFailureKeepsRow() {
+        for (String bad : new String[]{"<html>503 Service Unavailable</html>", "{\"error\":503}", "", "[]"}) {
+            eq(FixMoreCommentsPatch.convertListing(bad, "t1_parent|~aaa,bbb"), bad, "more comments: failed request passes through: " + bad);
+        }
+    }
+
     static void randomSubreddit() throws Exception {
         eq(FixRandomSubredditPatch.randomName("https://www.reddit.com/r/random"), "random", "random link: www");
         eq(FixRandomSubredditPatch.randomName("https://reddit.com/r/randnsfw/"), "random_nsfw", "random link: randnsfw");
@@ -160,14 +170,37 @@ public final class ExtensionHarness {
         return new JSONObject().put("kind", "t5").put("data", new JSONObject().put("display_name", name).put("over18", over18));
     }
 
+    /** A post listing with a two-item gallery: items in a non-alphabetical order, one non-ASCII caption. */
+    private static final String GALLERY_POST =
+            "{\"kind\":\"Listing\",\"data\":{\"children\":[{\"kind\":\"t3\",\"data\":{\"id\":\"abc123\","
+            + "\"gallery_data\":{\"items\":[{\"media_id\":\"second\",\"caption\":\"Caf\u00e9 \u2014 \u732b\","
+            + "\"outbound_url\":\"https://example.com/?a=1&b=2\"},{\"media_id\":\"first\",\"caption\":\"Plain\"}]},"
+            + "\"media_metadata\":{\"first\":{\"s\":{\"mp4\":\"https://i.redd.it/first.mp4\"}},"
+            + "\"second\":{\"s\":{\"u\":\"https://i.redd.it/second.jpg?a=1&b=2\"}}}}}]}}";
+
+    // URL and response cases partly adapted from 0naught's tests in upstream MR !7000.
     static void gallery() throws Exception {
-        eq(FixGalleryPatch.rewriteGalleryUrl("https://oauth.reddit.com/api/info.json?id=t3_abc123"),
-                "https://oauth.reddit.com/comments/abc123?limit=1&depth=0", "gallery: info -> comments");
-        eq(FixGalleryPatch.rewriteGalleryUrl("https://oauth.reddit.com/r/pics/hot.json"), "https://oauth.reddit.com/r/pics/hot.json", "gallery: other URL untouched");
-        String listing = "{\"kind\":\"Listing\",\"data\":{\"children\":[]}}";
-        eq(new JSONObject(FixGalleryPatch.unwrapPostListing("[" + listing + ",{\"kind\":\"Listing\"}]")).getString("kind"), "Listing", "gallery: unwrap [post, comments]");
-        eq(FixGalleryPatch.unwrapPostListing(listing), listing, "gallery: object passes through");
-        eq(FixGalleryPatch.unwrapPostListing("<html>"), "<html>", "gallery: garbage passes through");
+        String info = "https://oauth.reddit.com/api/info.json?id=t3_";
+        eq(FixGalleryPatch.rewriteGalleryUrl(info + "abc123"), "https://oauth.reddit.com/comments/abc123?limit=1&depth=0", "gallery: info -> comments");
+        eq(FixGalleryPatch.rewriteGalleryUrl(info + "longpostid123456"), "https://oauth.reddit.com/comments/longpostid123456?limit=1&depth=0", "gallery: long post id");
+        for (String url : new String[]{null, "", info, info + "abc&other=1", info + "t3_x,t3_y",
+                "https://example.com/api/info.json?id=t3_abc", "https://oauth.reddit.com/comments/abc.json",
+                "https://oauth.reddit.com/r/pics/hot.json"}) {
+            check(FixGalleryPatch.rewriteGalleryUrl(url) == url, "gallery: left unchanged: " + url);
+        }
+        String body = " \n[" + GALLERY_POST + ",{\"kind\":\"Listing\",\"data\":{\"children\":[{\"kind\":\"t1\"}]}}]";
+        JSONObject unwrapped = new JSONObject(FixGalleryPatch.unwrapPostListing(body));
+        check(unwrapped.similar(new JSONObject(GALLERY_POST)), "gallery: post listing unchanged by the round trip");
+        org.json.JSONArray items = unwrapped.getJSONObject("data").getJSONArray("children").getJSONObject(0)
+                .getJSONObject("data").getJSONObject("gallery_data").getJSONArray("items");
+        eq(items.getJSONObject(0).getString("media_id"), "second", "gallery: item order kept");
+        eq(items.getJSONObject(0).getString("caption"), "Caf\u00e9 \u2014 \u732b", "gallery: non-ASCII caption kept");
+        eq(FixGalleryPatch.unwrapPostListing(GALLERY_POST), GALLERY_POST, "gallery: object passes through");
+        for (String bad : new String[]{"", "<html>Forbidden</html>", "{\"error\":403}", "[]", "[", "[null]",
+                "[{\"data\":{\"children\":[]}}]", "[{\"data\":{\"children\":[{}]}}]"}) {
+            eq(FixGalleryPatch.unwrapPostListing(bad), bad, "gallery: malformed passes through: " + bad);
+        }
+        eq(FixGalleryPatch.unwrapPostListing(null), null, "gallery: null passes through");
     }
 
     static void imgur() {

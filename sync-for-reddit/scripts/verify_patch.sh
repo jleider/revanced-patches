@@ -84,7 +84,7 @@ fi
 EXPECTED_PATCHES=(
   "Spoof client" "Disable ads" "Disable Sync for Lemmy bottom sheet" "Fix /s/ links"
   "Fix Redgifs API" "Fix post thumbnails" "Fix video downloads"
-  "Fix login redirect" "Fix galleries" "Fix Imgur" "Fix load more comments" "Disable telemetry" "Fix combined subreddit feeds" "Fix other discussions" "Fix random subreddit"
+  "Fix login redirect" "Fix galleries" "Fix Imgur" "Fix loading more comments" "Disable telemetry" "Fix combined subreddit feeds" "Fix other discussions" "Fix random subreddit"
   "Fix DeviantArt embeds" "Hide restore comment" "Fix link previews"
   "Fix Gfycat" "Fix Reddit image URLs" "Upgrade connections to HTTPS" "Fix Reddit video playback" "Fix YouTube player" "Fix Reddit status alert" "Fix Tumblr"
 )

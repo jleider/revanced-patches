@@ -16,8 +16,8 @@ import com.android.tools.smali.dexlib2.iface.reference.StringReference
 private const val EXTENSION = "Lapp/revanced/extension/syncforreddit/FixMoreCommentsPatch;"
 
 @Suppress("unused")
-val fixLoadMoreCommentsPatch = bytecodePatch(
-    name = "Fix load more comments",
+val fixLoadingMoreCommentsPatch = bytecodePatch(
+    name = "Fix loading more comments",
     description = "Fixes loading more comments.",
 ) {
     dependsOn(sharedExtensionPatch)

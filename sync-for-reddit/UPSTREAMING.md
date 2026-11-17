@@ -47,8 +47,8 @@ These are fork-only and should not be in an upstream MR:
 1. **Core fixes**, one commit per patch: Reddit image URLs, Imgur, Gfycat, Reddit video playback, link previews,
    login redirect, combined subreddit feeds, random subreddit, other discussions, DeviantArt embeds, Tumblr,
    HTTPS upgrade, Reddit status alert, Hide restore comment.
-2. **Comments and galleries**: other contributors had open MRs for `Fix loading more comments` and `Fix galleries`
-   (November 2026). Compare and coordinate with them, or contribute to theirs, instead of opening a competing MR.
+2. **Comments and galleries**, superseding the open MRs !6999 (Bryan Ulate: `Fix loading more comments` +
+   `Fix galleries`) and !7000 (0naught: galleries only). See "Superseding !6999 and !7000" below.
 3. **Fix YouTube player** with its "Block YouTube ads" option, on its own, with the option clearly described.
 4. **Disable telemetry** and the remaining small patches.
 
@@ -63,3 +63,46 @@ These are fork-only and should not be in an upstream MR:
 - Build the MR branch from `git cherry-pick`/`git checkout <fork> -- <paths>` of only the patch and extension
   files, so none of the fork-only paths above come along.
 - Write the MR description as a list of user-visible fixes, one line each.
+
+## Superseding !6999 and !7000
+
+All three implementations use the same idea: `/comments/<post>` for galleries, comment permalinks for
+"load more". Ours is offered as the consolidated version, keeping everything useful from theirs, with credit.
+
+Taken from them:
+- !6999 (Bryan Ulate): the patch name `Fix loading more comments` (already through review there) and the
+  permalink approach (which they credit to RedReader).
+- !7000 (0naught): post-id validation, the oauth.reddit.com host check, and "leave malformed or empty
+  responses to Sync's own error handling" for galleries; their six gallery test cases, adapted into
+  `ExtensionHarness.gallery()` (with the maintainer's review points addressed: explained ids and the
+  non-ASCII caption, a static fixture).
+- 0naught's review of !6999 found a partial-failure bug (a failed extra request silently drops a comment and
+  its retry row). Ours doesn't have it: every request is all-or-nothing and a failed body goes back to Sync
+  unchanged, so the "load more" row survives; `moreCommentsFailureKeepsRow()` tests it.
+
+Where ours differs:
+- One request per "load more" row in the common case (the parent thread, `limit=500`), then one permalink
+  at a time only for comments that weren't in it; !6999 issues one request per hidden comment (up to 100,
+  8 in parallel), which can hit Reddit's ~100 requests/minute limit on big threads.
+- Uses Sync's own Volley/OkHttp stack (headers, HTTPS upgrade, logging) instead of a separate
+  HttpURLConnection, and keeps Sync's "load N more" counts right.
+- Covered by unit tests on recorded responses and emulator scenarios, including a very large thread.
+
+Etiquette: before opening ours, comment on !6999 and !7000 with a link, thank the authors, say what was taken
+from each and why ours is offered as the consolidated version, and offer to close ours instead if the
+maintainer prefers theirs. Commits that include their work carry `Co-authored-by:` trailers:
+
+    Co-authored-by: Bryan Ulate <bryanulatec@gmail.com>
+    Co-authored-by: 0naught <2214854-0naught@users.noreply.gitlab.com>
+
+(both from their public MR commits).
+
+### Draft MR description (galleries and comments)
+
+> Supersedes !6999 and !7000, consolidating them. Thanks to Bryan Ulate and 0naught: this keeps the patch
+> name and permalink approach from !6999 and the gallery validation and test cases from !7000, and avoids
+> the partial-failure case raised in the !6999 review.
+>
+> - Fix galleries: galleries open again (Reddit blocks `/api/info`; the post is read from `/comments/<id>`).
+> - Fix loading more comments: "View more" works again with usually one request per row instead of one per
+>   comment, so large threads don't hit Reddit's rate limit. A failed request keeps the row for a retry.
