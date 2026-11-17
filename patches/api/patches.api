@@ -926,6 +926,50 @@ public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/
 	public static final fun getSharedExtensionPatch ()Lapp/revanced/patcher/patch/Patch;
 }
 
+public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/deadservices/FixDeviantArtEmbedsPatchKt {
+	public static final fun getFixDeviantArtEmbedsPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/deadservices/HideRestoreCommentPatchKt {
+	public static final fun getHideRestoreCommentPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/duplicates/FixOtherDiscussionsPatchKt {
+	public static final fun getFixOtherDiscussionsPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/gfycat/FixGfycatPatchKt {
+	public static final fun getFixGfycatPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/imageurls/FixRedditImageUrlsPatchKt {
+	public static final fun getFixRedditImageUrlsPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/imgur/FixImgurPatchKt {
+	public static final fun getFixImgurPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/linkpreview/FixLinkPreviewsPatchKt {
+	public static final fun getFixLinkPreviewsPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/login/FixLoginRedirectPatchKt {
+	public static final fun getFixLoginRedirectPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/multisub/FixCombinedSubredditFeedsPatchKt {
+	public static final fun getFixCombinedSubredditFeedsPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/random/FixRandomSubredditPatchKt {
+	public static final fun getFixRandomSubredditPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/redditvideo/FixRedditVideoPlaybackPatchKt {
+	public static final fun getFixRedditVideoPlaybackPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
 public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/redgifs/FixRedgifsApiPatchKt {
 	public static final fun getFixRedgifsApi ()Lapp/revanced/patcher/patch/Patch;
 }
@@ -935,8 +979,16 @@ public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/
 	public static final fun getFixSLinksPatch ()Lapp/revanced/patcher/patch/Patch;
 }
 
+public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/status/FixRedditStatusAlertPatchKt {
+	public static final fun getFixRedditStatusAlertPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
 public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/thumbnail/FixPostThumbnailsPatchKt {
 	public static final fun getFixPostThumbnailsPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/tumblr/FixTumblrPatchKt {
+	public static final fun getFixTumblrPatch ()Lapp/revanced/patcher/patch/Patch;
 }
 
 public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/user/UseUserEndpointPatchKt {
@@ -945,6 +997,10 @@ public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/
 
 public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/video/FixVideoDownloadsPatchKt {
 	public static final fun getFixVideoDownloadsPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
+public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/misc/https/UpgradeConnectionsToHttpsPatchKt {
+	public static final fun getUpgradeConnectionsToHttpsPatch ()Lapp/revanced/patcher/patch/Patch;
 }
 
 public final class app/revanced/patches/reddit/layout/community/HideRecommendedCommunitiesShelfPatchKt {
