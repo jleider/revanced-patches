@@ -950,6 +950,10 @@ public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/
 	public static final fun getFixCombinedSubredditFeedsPatch ()Lapp/revanced/patcher/patch/Patch;
 }
 
+public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/random/FixRandomSubredditPatchKt {
+	public static final fun getFixRandomSubredditPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
 public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/redditvideo/FixRedditVideoPlaybackPatchKt {
 	public static final fun getFixRedditVideoPlaybackPatch ()Lapp/revanced/patcher/patch/Patch;
 }
