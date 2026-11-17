@@ -68,6 +68,10 @@ These are fork-only and should not be in an upstream MR:
 - Build the MR branch from `git cherry-pick`/`git checkout <fork> -- <paths>` of only the patch and extension
   files, so none of the fork-only paths above come along.
 - Write the MR description as a list of user-visible fixes, one line each.
+- End each MR description with a short "Testing" paragraph linking the fork's tooling
+  (<https://github.com/jleider/revanced-patches/tree/main/sync-for-reddit#developing>): unit tests on recorded
+  responses, an e2e scenario per patch with a negative control, the reachability check and the ART verifier.
+  The draft PRs on the fork (`upstream/sync-*` branches) already carry it.
 
 ## Superseding !6999 and !7000
 
