@@ -42,7 +42,8 @@ These are fork-only and should not be in an upstream MR:
 
 - `sync-for-reddit/` (scripts, e2e, fixtures, snapshots, this file, CLAUDE.md) and `.claude/`.
 - `extensions/syncforreddit/src/test/` (JVM stubs and harnesses; upstream has no extension test tree).
-- `.github/workflows` changes and the `patches/build.gradle.kts` changes for unsigned/fork publishing.
+- `.github/workflows` and `.releaserc` changes (fork releases are `X.Y.Z-sync.N` from `main`), and the
+  `patches/build.gradle.kts` changes for unsigned/fork publishing.
 - Probably "Enable debug logging" (developer tooling, `use = false`); include only with a justification.
 
 ## Suggested split

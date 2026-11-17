@@ -4,8 +4,9 @@ on:
   workflow_dispatch:
   push:
     branches:
+      # Fork releases come only from main, versioned X.Y.Z-sync.N (see .releaserc) so they never
+      # collide with upstream ReVanced's version numbers.
       - main
-      - dev
 
 env:
   HAS_GPG_KEY: ${{ secrets.GPG_PRIVATE_KEY != '' }}
