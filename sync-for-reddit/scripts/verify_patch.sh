@@ -86,7 +86,7 @@ EXPECTED_PATCHES=(
   "Fix Redgifs API" "Fix post thumbnails" "Fix video downloads"
   "Fix login redirect" "Fix galleries" "Fix Imgur" "Fix load more comments" "Disable telemetry" "Fix combined subreddit feeds" "Fix other discussions" "Fix random subreddit"
   "Fix DeviantArt embeds" "Hide restore comment" "Fix link previews"
-  "Fix Gfycat" "Fix Reddit image URLs" "Upgrade connections to HTTPS" "Fix Reddit video playback" "Fix YouTube player"
+  "Fix Gfycat" "Fix Reddit image URLs" "Upgrade connections to HTTPS" "Fix Reddit video playback" "Fix YouTube player" "Fix Reddit status alert" "Fix Tumblr"
 )
 EXTRA=()
 [ -n "${EXTRA_PATCHES:-}" ] && IFS=',' read -ra EXTRA <<< "$EXTRA_PATCHES"

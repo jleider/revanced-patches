@@ -255,6 +255,38 @@ def random_subreddit(c):
 
 
 @scenario
+def random_link(c):
+    # Fix random subreddit (links): a reddit.com/r/random link from outside Sync used to open r/random
+    # as a listing (404). Cold start goes through MainActivity, a running Sync through IntentActivity;
+    # both must show the random picker. r/randnsfw (Reddit's name) maps to Sync's random_nsfw.
+    c.open("/r/random")
+    c.expect_url(r"subreddits/popular\.json\?limit=100&revanced_random=sfw", "cold r/random link did not pick a random subreddit")
+    c.expect_no_url(r"/r/random/", "r/random opened as a listing")
+    adb("shell", "am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", "https://www.reddit.com/r/randnsfw", "-p", PKG)
+    c.expect_url(r"subreddits/search\.json\?q=nsfw&include_over_18=on&limit=100&revanced_random=nsfw",
+                 "warm r/randnsfw link did not pick a random subreddit")
+    c.expect_no_url(r"/r/randnsfw/", "r/randnsfw opened as a listing")
+    c.healthy()
+
+
+@scenario
+def tumblr(c):
+    # Fix Tumblr: the v2 API key is revoked; images come from the keyless v1 API into the image viewer.
+    c.open(L.tumblr_photo_post())
+    c.tap_media()
+    # TumblrRequest is not a RedditRequest (no URL log line); Sync logs the body its parser receives.
+    c.wait_log(r'\{"response":\{"posts":\[\{"photos":\[\{"original_size"', timeout=20)
+    c.expect(re.search(r'\{"response":\{"posts":\[\{"photos":\[\{"original_size"', c.log()),
+             "Tumblr photos never reached Sync's parser")
+    hosts = c.hosts()
+    c.expect(not any(h.startswith("api.tumblr.com") for h in hosts), "revoked v2 API still used")
+    c.expect_no_ui(textContains="Error loading")
+    c.poll(lambda: any("media.tumblr.com" in h for h in c.hosts()), timeout=15)
+    c.expect(any("media.tumblr.com" in h for h in c.hosts()), "no Tumblr image was downloaded")
+    c.healthy()
+
+
+@scenario
 def other_discussions(c):
     c.open(L.link_post())
     D.tap(c.d, resourceId=PKG + ":id/menu_comments_more")

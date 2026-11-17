@@ -182,6 +182,40 @@ class ReachabilityTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('unreachable extension invoke', result.stdout)
 
+    def test_whole_method_replacement_allows_dead_original(self):
+        self.write(f"""
+            {HOOK}
+            return-void
+            const/4 v0, 0x1
+            if-eqz v0, :skip
+            const/4 v1, 0x2
+            :skip
+            return-void
+        """)
+        self.assertEqual(self.run_checker().returncode, 0)
+
+    def test_replacement_does_not_hide_a_dead_extension_call(self):
+        self.write(f"""
+            {HOOK}
+            return-void
+            {HOOK}
+            return-void
+        """)
+        result = self.run_checker()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('unreachable extension invoke', result.stdout)
+
+    def test_branch_before_return_is_not_a_replacement(self):
+        self.write(f"""
+            const/4 v0, 0x1
+            if-eqz v0, :end
+            {HOOK}
+            :end
+            return-void
+            const/4 v1, 0x2
+        """)
+        self.assertEqual(self.run_checker().returncode, 1)
+
     def test_missing_target_fails(self):
         self.write(HOOK + '\ngoto :missing')
         result = self.run_checker()

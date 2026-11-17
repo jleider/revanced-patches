@@ -76,3 +76,10 @@ okhttp3/OkHttpClient$Builder.smali              # build(): append HttpsUpgradeIn
 xc/a.smali                                   # ExoplayerUtils (v.redd.it HLS -> DASH source)
 com/laurencedawson/reddit_sync/ui/views/video/CustomExoPlayerView.smali # Fix Reddit video playback (viewer source)
 com/laurencedawson/reddit_sync/ui/activities/CustomYouTubeVideoActivity.smali # Fix YouTube player
+# --- ours: Fix Reddit status alert
+r8/f.smali                                   # RedditStatusRequest (incident filter)
+t9/q1.smali                                  # RedditIsDownAlertDialogBottomSheet (incident details)
+# --- ours: Fix Tumblr
+r8/j.smali                                   # TumblrRequest (keyless v1 API)
+# --- ours: Fix random subreddit (links); MainActivity also listed above for the Lemmy sheet
+y7/a.smali                                   # LinkHandler (r/randnsfw name, non-Sync context)

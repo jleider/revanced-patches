@@ -1,0 +1,1 @@
+var tumblr_api_read = {"tumblelog": {"name": "example", "avatar_url_128": "https://64.media.tumblr.com/avatar_447dfbecba89_128.png"}, "posts": [{"id": "832055028126777344", "type": "answer", "answer": "<p>Text-only answer (fixture trimmed).</p>"}]};

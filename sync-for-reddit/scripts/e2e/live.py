@@ -274,6 +274,20 @@ def youtube_post():
 
 
 @singleflight
+def tumblr_photo_post():
+    """A link post to a Tumblr post (blog.tumblr.com/post/<id>) that has images, checked with the keyless v1 API."""
+    def has_images(p):
+        m = re.match(r"https?://([a-z0-9-]+)\.tumblr\.com/post/(\d+)", p["url"])
+        if not m or m.group(1) == "www":
+            return False
+        st, body = http(f"https://{m.group(1)}.tumblr.com/api/read/json?id={m.group(2)}")
+        text = (body or b"").decode("utf-8", "replace").replace("\\/", "/")
+        return st == 200 and re.search(r"media\.tumblr\.com/[0-9a-f]{32}/[0-9a-f]{16}-\w{2}/s(?:640x960|1280x1920|2048x3072)/", text)
+    return _first(listing("/domain/tumblr.com/top?t=month") + listing("/domain/tumblr.com/hot") + listing("/domain/tumblr.com/top?t=year"),
+                  has_images, "Tumblr post with images")["permalink"]
+
+
+@singleflight
 def redgifs():
     """A post linking Redgifs (no Redgifs links are ever committed)."""
     return _first(listing("/domain/redgifs.com/top?t=week") + listing("/domain/redgifs.com/hot"),

@@ -11,3 +11,21 @@ internal val BytecodePatchContext.randomParseMethodMatch by composingFirstMethod
     instructions(string { equals("subreddit") })
     custom { immutableClassDef.sourceFile == "RandomRequest.java" }
 }
+
+// MainActivity.onCreate: an external reddit.com/r/<sub> link given as the "link" extra opens as a listing.
+internal val BytecodePatchContext.mainActivityOnCreateMethodMatch by composingFirstMethod {
+    name("onCreate")
+    parameterTypes("Landroid/os/Bundle;")
+    custom { immutableClassDef.sourceFile == "MainActivity.java" }
+}
+
+// LinkHandler's subreddit-link opener (y7.a.T in v23.06.30): shows the Random sheet for random/random_nsfw.
+internal val BytecodePatchContext.openSubredditLinkMethodMatch by composingFirstMethod {
+    returnType("V")
+    parameterTypes("Landroid/content/Context;", "Ljava/lang/String;")
+    instructions(
+        string { equals("Opening subreddit link: ") },
+        string { equals("random_nsfw") },
+    )
+    custom { immutableClassDef.sourceFile == "LinkHandler.java" }
+}

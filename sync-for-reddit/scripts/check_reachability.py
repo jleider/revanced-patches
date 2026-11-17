@@ -160,6 +160,24 @@ def class_files(root):
             yield '/'.join(parts), file
 
 
+def replaced_at_entry(instructions):
+    """True if the method starts with a straight-line block that calls the extension and returns.
+
+    That is a deliberate whole-method replacement (a patch inserting `invoke ... ; return` at index 0),
+    so the original body after it is expected to be dead. Labels, branches or try blocks end the scan.
+    """
+    called = False
+    for _, line in instructions:
+        op = line.split()[0] if line.split() else ''
+        if is_extension(line):
+            called = True
+        elif op.startswith('return'):
+            return called
+        elif op.startswith(('if-', 'goto', 'switch', 'packed-switch', 'sparse-switch', 'throw')) or line.startswith((':', '.catch')):
+            return False
+    return False
+
+
 def check(root, original):
     originals = dict(class_files(original)) if original.is_dir() else {}
     checked, problems = 0, []
@@ -179,9 +197,12 @@ def check(root, original):
                     original_methods = ({m.signature: m for m in methods(old_file.read_text(encoding='utf-8'))}
                                         if old_file else {})
                 baseline = dead_original(original_methods.get(method.signature))
+                replaced = replaced_at_entry(instructions)
                 for i, (number, line) in enumerate(instructions):
                     if i in reachable or line == 'nop':
                         continue
+                    if replaced and not is_extension(line):
+                        continue   # whole method replaced on purpose: its original body is dead
                     key = normalized(line)
                     if not is_extension(line) and baseline[key]:
                         baseline[key] -= 1

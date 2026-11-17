@@ -36,6 +36,8 @@ public final class ExtensionHarness {
         httpsUpgrade();
         redditVideo();
         redgifsInfo();
+        redditStatus();
+        tumblr();
         youTube();
         previewSafety();
         System.out.println((failures == 0 ? "PASS" : "FAIL") + ": " + (checks - failures) + "/" + checks + " extension checks");
@@ -117,6 +119,19 @@ public final class ExtensionHarness {
     }
 
     static void randomSubreddit() throws Exception {
+        eq(FixRandomSubredditPatch.randomName("https://www.reddit.com/r/random"), "random", "random link: www");
+        eq(FixRandomSubredditPatch.randomName("https://reddit.com/r/randnsfw/"), "random_nsfw", "random link: randnsfw");
+        eq(FixRandomSubredditPatch.randomName("https://old.reddit.com/r/Random?utm=x"), "random", "random link: old + query");
+        eq(FixRandomSubredditPatch.randomName("/r/random_nsfw"), "random_nsfw", "random link: Sync's own name");
+        eq(FixRandomSubredditPatch.randomName("https://www.reddit.com/r/randomthoughts"), null, "random link: r/randomthoughts is a real subreddit");
+        eq(FixRandomSubredditPatch.randomName("https://www.reddit.com/r/random/comments/abc/x"), null, "random link: post links untouched");
+        eq(FixRandomSubredditPatch.randomName("https://reddit.com.evil.example/r/random"), null, "random link: lookalike host");
+        check(!FixRandomSubredditPatch.isListableSubredditLink(true, "https://www.reddit.com/r/random"), "random link: not opened as a listing");
+        check(FixRandomSubredditPatch.isListableSubredditLink(true, "https://www.reddit.com/r/android"), "random link: other subreddits still listings");
+        check(!FixRandomSubredditPatch.isListableSubredditLink(false, "https://www.reddit.com/r/android"), "random link: non-subreddit links unchanged");
+        eq(FixRandomSubredditPatch.normalizeSubreddit("RandNSFW"), "random_nsfw", "random link: randnsfw normalized");
+        eq(FixRandomSubredditPatch.normalizeSubreddit("android"), "android", "random link: other names unchanged");
+        check(!FixRandomSubredditPatch.openRandomInSync(null, "https://www.reddit.com/r/random"), "random link: no context -> not handled");
         String sfw = FixRandomSubredditPatch.rewriteUrl("https://oauth.reddit.com/r/random.json");
         String nsfw = FixRandomSubredditPatch.rewriteUrl("https://oauth.reddit.com/r/randnsfw.json");
         check(sfw.contains("/subreddits/popular.json") && sfw.contains("revanced_random=sfw"), "random: sfw URL");
@@ -299,6 +314,81 @@ public final class ExtensionHarness {
         check(YouTubeWebPlayer.AD_SCRIPT.contains("/youtubei\\/v1\\/player/") , "youtube ads: player-response regex escaped for JS");
         check(YouTubeWebPlayer.AD_SCRIPT.contains(YouTubeWebPlayer.WAIT_TEXT) && YouTubeWebPlayer.AD_SCRIPT.contains("SYNC_YT_WAIT_NOTICE"), "youtube ads: wait notice included");
         check(YouTubeWebPlayer.WAIT_TEXT.indexOf('\'') < 0 && YouTubeWebPlayer.STALL_TEXT.indexOf('\'') < 0, "youtube ads: notice texts safe in a JS string");
+    }
+
+    static org.json.JSONObject incident(String id, String name, String status, String impact, String... comps) throws Exception {
+        org.json.JSONArray c = new org.json.JSONArray();
+        for (String n : comps) c.put(new org.json.JSONObject().put("name", n));
+        return new org.json.JSONObject().put("id", id).put("name", name).put("status", status).put("impact", impact)
+                .put("resolved_at", status.equals("resolved") ? "2026-11-16T03:00:00.000-08:00" : org.json.JSONObject.NULL)
+                .put("created_at", "2026-11-16T02:00:00.000-08:00").put("components", c)
+                .put("incident_updates", new org.json.JSONArray().put(new org.json.JSONObject().put("id", "u-" + id)
+                        .put("body", "We are investigating.").put("created_at", "2026-11-16T02:30:00.000-08:00")));
+    }
+
+    static void redditStatus() throws Exception {
+        long now = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ", java.util.Locale.US).parse("2026-11-16T03:00:00-0800").getTime();
+        org.json.JSONObject none = new org.json.JSONObject();
+        org.json.JSONObject ios = incident("a", "Apple iOS App - Apple Account login issues", "investigating", "minor", "Native Mobile Apps");
+        org.json.JSONObject web = incident("b", "Slow page loads", "investigating", "minor", "Desktop Web", "Mobile Web");
+        org.json.JSONObject done = incident("c", "Elevated errors", "resolved", "major", "Native Mobile Apps");
+        org.json.JSONObject comments = incident("d", "Comments failing to load", "identified", "minor", "Comment Processing");
+        org.json.JSONObject majorIos = incident("e", "iOS and site outage", "investigating", "major", "Native Mobile Apps");
+        org.json.JSONObject bare = incident("f", "Investigating elevated errors", "investigating", "none");
+        eq(FixRedditStatusPatch.relevantIncident(new org.json.JSONArray().put(ios).put(web).put(done), none, now), null, "status: iOS-only, web-only and resolved incidents ignored");
+        eq(FixRedditStatusPatch.relevantIncident(new org.json.JSONArray().put(ios).put(comments), none, now).optString("id"), "d", "status: comment processing incident shown");
+        eq(FixRedditStatusPatch.relevantIncident(new org.json.JSONArray().put(majorIos), none, now).optString("id"), "e", "status: major incidents shown whatever they name");
+        eq(FixRedditStatusPatch.relevantIncident(new org.json.JSONArray().put(bare), none, now).optString("id"), "f", "status: incident without components shown");
+        org.json.JSONObject seen = FixRedditStatusPatch.record(none, comments, now);
+        eq(FixRedditStatusPatch.relevantIncident(new org.json.JSONArray().put(comments), seen, now + 60_000), null, "status: shown incident not repeated");
+        eq(FixRedditStatusPatch.relevantIncident(new org.json.JSONArray().put(comments), seen, now + FixRedditStatusPatch.RESHOW_MS).optString("id"), "d", "status: reshown after RESHOW_MS");
+        org.json.JSONObject updated = new org.json.JSONObject(comments.toString());
+        updated.getJSONArray("incident_updates").getJSONObject(0).put("id", "u-d2");
+        eq(FixRedditStatusPatch.relevantIncident(new org.json.JSONArray().put(updated), seen, now + 60_000).optString("id"), "d", "status: reshown on a new update");
+        org.json.JSONObject old = FixRedditStatusPatch.record(seen, web, now + 8L * 24 * 3600 * 1000);
+        check(!old.has("d") && old.has("b"), "status: week-old entries dropped");
+        String d = FixRedditStatusPatch.describe(comments, now);
+        check(d.startsWith("Comments failing to load (minor impact, identified)\nAffected: Comment Processing"), "status: title line: " + d);
+        check(d.contains("Latest update, 30 min ago: We are investigating."), "status: latest update with age: " + d);
+        eq(FixRedditStatusPatch.ago("2026-11-16T10:00:00Z", now), "1 h ago", "status: Z offset");
+        eq(FixRedditStatusPatch.ago("garbage", now), "", "status: unparseable time");
+        check(FixRedditStatusPatch.healthy("not json"), "status: unreadable page is healthy");
+        eq(FixRedditStatusPatch.message("orig"), "orig", "status: original text until an incident is found");
+    }
+
+    static void tumblr() throws Exception {
+        String[] a = FixTumblrPatch.blogAndId("https://staff.tumblr.com/post/811987751056605184/some-slug");
+        check(a != null && a[0].equals("staff") && a[1].equals("811987751056605184"), "tumblr: blog.tumblr.com/post/id");
+        a = FixTumblrPatch.blogAndId("https://www.tumblr.com/markrosewater/832645643147395072/i-dont?source=share");
+        check(a != null && a[0].equals("markrosewater") && a[1].equals("832645643147395072"), "tumblr: www.tumblr.com/blog/id");
+        a = FixTumblrPatch.blogAndId("https://www.tumblr.com/blog/view/staff/811987751056605184");
+        check(a != null && a[0].equals("staff"), "tumblr: /blog/view/blog/id");
+        eq(FixTumblrPatch.blogAndId("https://evil.example/post/1"), null, "tumblr: other hosts ignored");
+        eq(FixTumblrPatch.blogAndId("https://x.tumblr.com.evil.example/post/1"), null, "tumblr: lookalike host ignored");
+        eq(FixTumblrPatch.blogAndId("https://staff.tumblr.com/post/abc"), null, "tumblr: non-numeric id ignored");
+        String api = FixTumblrPatch.apiUrl("https://staff.tumblr.com/post/811987751056605184/x");
+        check(api.startsWith("https://staff.tumblr.com/api/read/json?id=811987751056605184&"), "tumblr: v1 URL " + api);
+        eq(FixTumblrPatch.apiUrl("https://example.com/x"), "https://example.com/x", "tumblr: unparseable URL unchanged");
+        String images = new String(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(fixtures, "tumblr_v1_images.js")), "UTF-8");
+        org.json.JSONArray photos = new org.json.JSONObject(FixTumblrPatch.convert(images, api))
+                .getJSONObject("response").getJSONArray("posts").getJSONObject(0).getJSONArray("photos");
+        check(photos.length() > 0, "tumblr: images found in the post body");
+        boolean big = true, small = true, unique = true;
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (int i = 0; i < photos.length(); i++) {
+            String o = photos.getJSONObject(i).getJSONObject("original_size").getString("url");
+            String t = photos.getJSONObject(i).getJSONArray("alt_sizes").getJSONObject(0).getString("url");
+            big &= o.matches("https://64\\.media\\.tumblr\\.com/.*/s(1280x1920|2048x3072|540x810|640x960)/.*");
+            small &= t.contains("/s") && !t.contains("u_c1");
+            unique &= seen.add(o.split("/s\\d")[0]);
+        }
+        check(big, "tumblr: largest size used " + photos);
+        check(small && unique, "tumblr: one entry per image, no avatars");
+        String text = new String(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(fixtures, "tumblr_v1_text.js")), "UTF-8");
+        boolean threw = false;
+        try { FixTumblrPatch.convert(text, "https://markrosewater.tumblr.com/api/read/json?id=832055028126777344&revanced_tumblr=1"); } catch (org.json.JSONException e) { threw = true; }
+        check(threw, "tumblr: text post -> parse error (and the browser)");
+        eq(FixTumblrPatch.convert("{}", "https://api.example/other"), "{}", "tumblr: other requests untouched");
     }
 
     static void redgifsInfo() throws Exception {
