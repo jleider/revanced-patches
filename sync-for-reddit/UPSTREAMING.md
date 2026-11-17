@@ -126,5 +126,5 @@ maintainer prefers theirs. Commits that include their work carry `Co-authored-by
   a resource patch that only supports a bytecode patch is unnamed and pulled in with `dependsOn()`;
   Kotlin sequences over `getElementsByTagName` loops; descriptions such as "Disables transient blur and
   flickering on new Android versions."
-- !5725 (wchill, merged) is the Redgifs fix our `Fix Redgifs API` change extends; !5692 (closed) was the
-  alternative it replaced. Mention !5725 in the MR that touches it.
+- !5725 (wchill, merged) is the shared Redgifs fix. Upstream `dev` now also answers Redgifs' removed `/info`
+  endpoint (`d7d9b0c54`), so the fork dropped its own `/info` emulation; nothing Redgifs-related goes upstream.

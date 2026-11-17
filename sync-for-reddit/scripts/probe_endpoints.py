@@ -292,9 +292,9 @@ def main():
         st, _ = http("GET", esc.replace("&amp;", "&"))
         rec("preview.redd.it unescaped (patched)", "patch: imageurls", True, st, st == 200)
 
-    # --- Redgifs (upstream Fix Redgifs API + our /info emulation) ------------------------
+    # --- Redgifs (upstream Fix Redgifs API, which also answers /info) ------------------------
     st, _ = http("GET", "https://api.redgifs.com/info")
-    rec("redgifs /info (Sync GrabIpRequest)", "GrabIpRequest", False, st, st == 200, "404 since 2026-11; answered locally by Fix Redgifs API")
+    rec("redgifs /info (Sync GrabIpRequest)", "GrabIpRequest", False, st, st == 200, "404 since 2026-11; answered locally by upstream's Fix Redgifs API")
     st, b = http("GET", "https://api.redgifs.com/v2/auth/temporary")
     rtok = (js(b) or {}).get("token")
     rec("redgifs temporary token (upstream patch)", "patch: redgifs", True, st, st == 200 and rtok)

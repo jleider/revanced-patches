@@ -35,7 +35,6 @@ public final class ExtensionHarness {
         redditImageUrls();
         httpsUpgrade();
         redditVideo();
-        redgifsInfo();
         redditStatus();
         moreCommentsFailureKeepsRow();
         tumblr();
@@ -433,14 +432,6 @@ public final class ExtensionHarness {
         check(one.size() == 1 && one.get(0)[0].endsWith("_1280.jpg") && one.get(0)[1].endsWith("_75sq.jpg"), "tumblr: legacy photo post");
         String set = "var tumblr_api_read = {\"posts\":[{\"type\":\"photo\",\"photos\":[{\"photo-url-1280\":\"https://64.media.tumblr.com/tumblr_a_1280.jpg\",\"photo-url-100\":\"https://64.media.tumblr.com/tumblr_a_100.jpg\"},{\"photo-url-1280\":\"https://64.media.tumblr.com/tumblr_b_1280.jpg\"}]}]};";
         check(FixTumblrPatch.images(set).size() == 2, "tumblr: legacy photoset");
-    }
-
-    static void redgifsInfo() throws Exception {
-        okhttp3.Response r = RedgifsInfo.emulate(new okhttp3.Request.Builder().url("https://api.redgifs.com/info").build());
-        check(r != null && r.code() == 200, "redgifs: /info answered locally");
-        eq(new org.json.JSONObject(r.body().string()).getString("remote-addr"), "", "redgifs: GrabIpRequest's remote-addr field present");
-        check(RedgifsInfo.emulate(new okhttp3.Request.Builder().url("https://api.redgifs.com/v2/gifs/x").build()) == null, "redgifs: other API calls go to Redgifs");
-        check(RedgifsInfo.emulate(new okhttp3.Request.Builder().url("https://evil.example/info").build()) == null, "redgifs: other hosts untouched");
     }
 
     static void redditVideo() {
