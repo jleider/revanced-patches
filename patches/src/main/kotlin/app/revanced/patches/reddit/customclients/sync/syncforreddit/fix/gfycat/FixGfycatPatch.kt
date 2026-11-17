@@ -19,7 +19,6 @@ private const val EXT = "Lapp/revanced/extension/syncforreddit/FixGfycatPatch;"
 val fixGfycatPatch = bytecodePatch(
     name = "Fix Gfycat",
     description = "Plays Reddit's archived copies of Gfycat videos and fails immediately when none exists.",
-    use = true,
 ) {
     dependsOn(sharedExtensionPatch)
     compatibleWith("com.laurencedawson.reddit_sync", "com.laurencedawson.reddit_sync.pro", "com.laurencedawson.reddit_sync.dev")

@@ -13,7 +13,6 @@ internal const val EXTENSION_CLASS_DESCRIPTOR = "Lapp/revanced/extension/syncfor
 val fixImgurPatch = bytecodePatch(
     name = "Fix Imgur",
     description = "Resolves Imgur images locally and loads albums from Imgur's public embed page, without an API key.",
-    use = true,
 ) {
     dependsOn(sharedExtensionPatch)
     compatibleWith(

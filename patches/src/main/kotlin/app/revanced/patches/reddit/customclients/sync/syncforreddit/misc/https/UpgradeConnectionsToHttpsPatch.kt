@@ -15,11 +15,9 @@ internal val BytecodePatchContext.okHttpBuildMatch by composingFirstMethod {
 }
 
 @Suppress("unused")
-val upgradeToHttpsPatch = bytecodePatch(
+val upgradeConnectionsToHttpsPatch = bytecodePatch(
     name = "Upgrade connections to HTTPS",
-    description = "Requests plain http:// URLs over https:// on every OkHttp client (feeds, images, video, " +
-        "link previews), falling back to http only for hosts whose HTTPS doesn't connect.",
-    use = true,
+    description = "Loads http:// links, images and videos over HTTPS, falling back to HTTP only for hosts without working HTTPS.",
 ) {
     dependsOn(sharedExtensionPatch)
     compatibleWith("com.laurencedawson.reddit_sync", "com.laurencedawson.reddit_sync.pro", "com.laurencedawson.reddit_sync.dev")

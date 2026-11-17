@@ -14,7 +14,6 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 val fixRedditImageUrlsPatch = bytecodePatch(
     name = "Fix Reddit image URLs",
     description = "Unescapes '&amp;' in preview.redd.it image URLs, which Reddit's image CDN now rejects with 403.",
-    use = true,
 ) {
     dependsOn(sharedExtensionPatch)
     compatibleWith("com.laurencedawson.reddit_sync", "com.laurencedawson.reddit_sync.pro", "com.laurencedawson.reddit_sync.dev")

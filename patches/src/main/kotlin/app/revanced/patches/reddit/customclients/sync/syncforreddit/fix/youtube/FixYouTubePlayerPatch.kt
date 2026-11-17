@@ -33,10 +33,9 @@ internal val BytecodePatchContext.blockAdsMethod by gettingFirstMethodDeclarativ
 }
 
 @Suppress("unused")
-val fixYouTubePatch = bytecodePatch(
+val fixYouTubePlayerPatch = bytecodePatch(
     name = "Fix YouTube player",
     description = "Plays YouTube videos inside Sync with YouTube's embed player, because current YouTube apps removed the player service Sync used. Videos that can't be embedded open in the YouTube app.",
-    use = true,
 ) {
     dependsOn(sharedExtensionPatch)
     compatibleWith("com.laurencedawson.reddit_sync", "com.laurencedawson.reddit_sync.pro", "com.laurencedawson.reddit_sync.dev")
@@ -45,7 +44,6 @@ val fixYouTubePatch = bytecodePatch(
         name = "Block YouTube ads",
         default = true,
         description = "Removes ads from videos played in Sync's YouTube player. Ads YouTube stitches into the video stream itself can still appear.",
-        required = false,
     )
 
     apply {

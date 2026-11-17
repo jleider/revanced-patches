@@ -7,7 +7,7 @@ import app.revanced.patches.reddit.customclients.sync.syncforreddit.extension.sh
 private const val EXTENSION_CLASS_DESCRIPTOR = "Lapp/revanced/extension/syncforreddit/FixCombinedSubredditsPatch;"
 
 @Suppress("unused")
-val fixCombinedSubredditsPatch = bytecodePatch(
+val fixCombinedSubredditFeedsPatch = bytecodePatch(
     name = "Fix combined subreddit feeds",
     description = "Fixes feeds that combine subreddits (r/a+b) redirecting to the Reddit homepage.",
 ) {

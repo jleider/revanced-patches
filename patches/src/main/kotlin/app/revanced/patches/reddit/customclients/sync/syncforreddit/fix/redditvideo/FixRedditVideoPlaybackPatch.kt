@@ -30,7 +30,6 @@ internal val BytecodePatchContext.viewerSourceMethodMatch by composingFirstMetho
 val fixRedditVideoPlaybackPatch = bytecodePatch(
     name = "Fix Reddit video playback",
     description = "Plays Reddit videos through their DASH stream, because Reddit now refuses the HLS stream of many new videos.",
-    use = true,
 ) {
     dependsOn(sharedExtensionPatch)
     compatibleWith("com.laurencedawson.reddit_sync", "com.laurencedawson.reddit_sync.pro", "com.laurencedawson.reddit_sync.dev")
