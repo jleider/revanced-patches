@@ -947,6 +947,10 @@ public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/
 	public static final fun getFixVideoDownloadsPatch ()Lapp/revanced/patcher/patch/Patch;
 }
 
+public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/youtube/FixYouTubePlayerPatchKt {
+	public static final fun getFixYouTubePlayerPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
 public final class app/revanced/patches/reddit/layout/community/HideRecommendedCommunitiesShelfPatchKt {
 	public static final fun getHideRecommendedCommunitiesShelfPatch ()Lapp/revanced/patcher/patch/Patch;
 }
