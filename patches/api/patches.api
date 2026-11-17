@@ -930,6 +930,10 @@ public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/
 	public static final fun getFixDeviantArtEmbedsPatch ()Lapp/revanced/patcher/patch/Patch;
 }
 
+public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/deadservices/HideRestoreCommentPatchKt {
+	public static final fun getHideRestoreCommentPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
 public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/duplicates/FixOtherDiscussionsPatchKt {
 	public static final fun getFixOtherDiscussionsPatch ()Lapp/revanced/patcher/patch/Patch;
 }
