@@ -18,7 +18,7 @@ private const val EXTENSION = "Lapp/revanced/extension/syncforreddit/FixMoreComm
 @Suppress("unused")
 val fixLoadMoreCommentsPatch = bytecodePatch(
     name = "Fix load more comments",
-    description = "Loads additional comments through comment permalinks instead of the blocked morechildren API.",
+    description = "Fixes loading more comments.",
 ) {
     dependsOn(sharedExtensionPatch)
     compatibleWith(

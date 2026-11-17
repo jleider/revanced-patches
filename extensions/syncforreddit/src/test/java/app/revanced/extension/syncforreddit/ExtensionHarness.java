@@ -339,6 +339,10 @@ public final class ExtensionHarness {
         eq(FixRedditStatusPatch.relevantIncident(new org.json.JSONArray().put(ios).put(comments), none, now).optString("id"), "d", "status: comment processing incident shown");
         eq(FixRedditStatusPatch.relevantIncident(new org.json.JSONArray().put(majorIos), none, now).optString("id"), "e", "status: major incidents shown whatever they name");
         eq(FixRedditStatusPatch.relevantIncident(new org.json.JSONArray().put(bare), none, now).optString("id"), "f", "status: incident without components shown");
+        org.json.JSONObject api = incident("g", "Elevated errors on desktop and API", "investigating", "minor", "Desktop Web", "Reddit Infrastructure");
+        eq(FixRedditStatusPatch.relevantIncident(new org.json.JSONArray().put(api), none, now).optString("id"), "g", "status: affected API component beats a client-sounding title");
+        org.json.JSONObject nativeOnly = incident("h", "Feeds failing to load", "investigating", "minor", "Native Mobile Apps");
+        eq(FixRedditStatusPatch.relevantIncident(new org.json.JSONArray().put(nativeOnly), none, now).optString("id"), "h", "status: app-only component with a generic title shown");
         org.json.JSONObject seen = FixRedditStatusPatch.record(none, comments, now);
         eq(FixRedditStatusPatch.relevantIncident(new org.json.JSONArray().put(comments), seen, now + 60_000), null, "status: shown incident not repeated");
         eq(FixRedditStatusPatch.relevantIncident(new org.json.JSONArray().put(comments), seen, now + FixRedditStatusPatch.RESHOW_MS).optString("id"), "d", "status: reshown after RESHOW_MS");
@@ -354,6 +358,8 @@ public final class ExtensionHarness {
         eq(FixRedditStatusPatch.ago("garbage", now), "", "status: unparseable time");
         check(FixRedditStatusPatch.healthy("not json"), "status: unreadable page is healthy");
         eq(FixRedditStatusPatch.message("orig"), "orig", "status: original text until an incident is found");
+        check(!FixRedditStatusPatch.healthy(new org.json.JSONObject().put("incidents", new org.json.JSONArray().put(comments)).toString()), "status: relevant incident -> sheet");
+        check(FixRedditStatusPatch.message("orig").startsWith("Comments failing to load"), "status: sheet shows the incident");
     }
 
     static void tumblr() throws Exception {
@@ -389,6 +395,11 @@ public final class ExtensionHarness {
         try { FixTumblrPatch.convert(text, "https://markrosewater.tumblr.com/api/read/json?id=832055028126777344&revanced_tumblr=1"); } catch (org.json.JSONException e) { threw = true; }
         check(threw, "tumblr: text post -> parse error (and the browser)");
         eq(FixTumblrPatch.convert("{}", "https://api.example/other"), "{}", "tumblr: other requests untouched");
+        String legacy = "var tumblr_api_read = {\"posts\":[{\"type\":\"photo\",\"photo-url-1280\":\"https://64.media.tumblr.com/tumblr_abc_1280.jpg\",\"photo-url-75\":\"https://64.media.tumblr.com/tumblr_abc_75sq.jpg\",\"photo-url-500\":\"https://64.media.tumblr.com/tumblr_abc_500.jpg\",\"photos\":[]}]};";
+        java.util.List<String[]> one = FixTumblrPatch.images(legacy);
+        check(one.size() == 1 && one.get(0)[0].endsWith("_1280.jpg") && one.get(0)[1].endsWith("_75sq.jpg"), "tumblr: legacy photo post");
+        String set = "var tumblr_api_read = {\"posts\":[{\"type\":\"photo\",\"photos\":[{\"photo-url-1280\":\"https://64.media.tumblr.com/tumblr_a_1280.jpg\",\"photo-url-100\":\"https://64.media.tumblr.com/tumblr_a_100.jpg\"},{\"photo-url-1280\":\"https://64.media.tumblr.com/tumblr_b_1280.jpg\"}]}]};";
+        check(FixTumblrPatch.images(set).size() == 2, "tumblr: legacy photoset");
     }
 
     static void redgifsInfo() throws Exception {

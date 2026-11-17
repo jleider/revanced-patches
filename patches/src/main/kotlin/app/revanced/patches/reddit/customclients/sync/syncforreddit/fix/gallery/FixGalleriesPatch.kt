@@ -32,7 +32,7 @@ private fun Instruction.invokes(target: Method) = methodRef()?.let {
 @Suppress("unused")
 val fixGalleriesPatch = bytecodePatch(
     name = "Fix galleries",
-    description = "Loads image galleries through /comments/ because Reddit now blocks /api/info.",
+    description = "Fixes loading image galleries.",
 ) {
     dependsOn(sharedExtensionPatch)
 

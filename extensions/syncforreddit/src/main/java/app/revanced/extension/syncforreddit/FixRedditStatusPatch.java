@@ -31,10 +31,17 @@ public final class FixRedditStatusPatch {
     /** Incidents about one of Reddit's own clients, not the API Sync uses. */
     private static final Pattern OTHER_CLIENT = Pattern.compile(
             "(?i)\\b(ios|iphone|ipad|apple|android app|desktop|mobile web|old reddit|new reddit|shreddit|reddit app)\\b");
+    /** Components about Reddit's own clients or internals; they alone don't show that the API is affected. */
+    private static final List<String> CLIENT_ONLY = java.util.Arrays.asList(
+            "Desktop Web", "Mobile Web", "Native Mobile Apps", "Spam Processing");
     /** Components that never affect a third-party client. */
-    private static final List<String> IRRELEVANT = java.util.Arrays.asList("Spam Processing", "Desktop Web", "Mobile Web");
+    private static final List<String> IRRELEVANT = java.util.Arrays.asList("Desktop Web", "Mobile Web", "Spam Processing");
 
     private static volatile String details;
+    /** The incident found by the last check, recorded as shown only once its sheet is displayed. */
+    private static volatile JSONObject pending;
+    private static volatile JSONObject pendingShown;
+    private static volatile long pendingAt;
 
     private FixRedditStatusPatch() {}
 
@@ -46,7 +53,9 @@ public final class FixRedditStatusPatch {
             JSONObject incident = relevantIncident(new JSONObject(body).getJSONArray("incidents"), shown, now);
             if (incident == null) return true;
             details = describe(incident, now);
-            remember(shown, incident, now);
+            pendingShown = shown;
+            pendingAt = now;
+            pending = incident;   // remembered in message(), when the sheet is actually built
             return false;
         } catch (Exception e) {
             return true;   // unreadable status page: say nothing rather than alarm
@@ -56,6 +65,11 @@ public final class FixRedditStatusPatch {
     /** The sheet's message: the incident's details, or Sync's own text. */
     public static String message(String original) {
         String d = details;
+        JSONObject inc = pending;
+        if (inc != null) {
+            pending = null;
+            remember(pendingShown, inc, pendingAt);
+        }
         return d != null ? d : original;
     }
 
@@ -70,21 +84,32 @@ public final class FixRedditStatusPatch {
             JSONObject seen = shown.optJSONObject(inc.optString("id"));
             if (seen != null && seen.optString("u").equals(latestUpdateId(inc))
                     && now - seen.optLong("t") < RESHOW_MS) continue;
-            String impact = inc.optString("impact");
-            boolean severe = impact.equals("major") || impact.equals("critical");
-            if (!severe && OTHER_CLIENT.matcher(inc.optString("name")).find()) continue;
-            JSONArray comps = inc.optJSONArray("components");
-            if (comps != null && comps.length() > 0) {
-                boolean any = false;
-                for (int c = 0; c < comps.length(); c++) {
-                    JSONObject comp = comps.optJSONObject(c);
-                    if (comp != null && !IRRELEVANT.contains(comp.optString("name"))) any = true;
-                }
-                if (!any && !severe) continue;
-            }
-            return inc;
+            if (affectsSync(inc)) return inc;
         }
         return null;
+    }
+
+    /**
+     * A component beyond Reddit's own clients (comments, votes, infrastructure, media, an API) means Sync
+     * is affected, whatever the title says. Otherwise major/critical incidents count; minor ones about
+     * only the web, or titled after one of Reddit's own clients, don't.
+     */
+    static boolean affectsSync(JSONObject inc) {
+        JSONArray comps = inc.optJSONArray("components");
+        boolean hasComps = comps != null && comps.length() > 0;
+        boolean webOnly = hasComps;
+        if (hasComps) {
+            for (int c = 0; c < comps.length(); c++) {
+                JSONObject comp = comps.optJSONObject(c);
+                String name = comp == null ? "" : comp.optString("name");
+                if (!name.isEmpty() && !CLIENT_ONLY.contains(name)) return true;
+                if (!IRRELEVANT.contains(name)) webOnly = false;
+            }
+        }
+        String impact = inc.optString("impact");
+        if (impact.equals("major") || impact.equals("critical")) return true;
+        if (webOnly) return false;
+        return !OTHER_CLIENT.matcher(inc.optString("name")).find();
     }
 
     static boolean unresolved(JSONObject inc) {

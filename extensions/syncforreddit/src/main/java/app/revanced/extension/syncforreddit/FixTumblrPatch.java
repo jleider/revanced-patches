@@ -87,13 +87,21 @@ public final class FixTumblrPatch {
         JSONArray posts = new JSONObject(json.substring(start, end + 1)).optJSONArray("posts");
         JSONObject post = posts != null && posts.length() > 0 ? posts.getJSONObject(0) : null;
         if (post == null) return new ArrayList<>();
-        StringBuilder text = new StringBuilder();
+        List<String[]> out = new ArrayList<>();
+        // Legacy photo posts and photosets carry their sizes as photo-url-<width> fields.
         JSONArray photos = post.optJSONArray("photos");
         if (photos != null && photos.length() > 0) {
-            for (int i = 0; i < photos.length(); i++) text.append(photos.getJSONObject(i).toString()).append('\n');
+            for (int i = 0; i < photos.length(); i++) {
+                String[] sizes = legacySizes(photos.optJSONObject(i));
+                if (sizes != null) out.add(sizes);
+            }
         } else {
-            text.append(post.optString("photo-url-1280")).append('\n');
+            String[] sizes = legacySizes(post);
+            if (sizes != null) out.add(sizes);
         }
+        if (!out.isEmpty()) return out;
+        // NPF posts: <img srcset> inside the HTML body fields.
+        StringBuilder text = new StringBuilder();
         for (String field : new String[]{"regular-body", "photo-caption", "answer", "link-description", "quote-text"}) {
             text.append(post.optString(field)).append('\n');
         }
@@ -111,9 +119,26 @@ public final class FixTumblrPatch {
                 if (area < (Long) e[3]) { e[2] = url; e[3] = area; }
             }
         }
-        List<String[]> out = new ArrayList<>();
         for (Object[] e : byImage.values()) out.add(new String[]{(String) e[0], (String) e[2]});
         return out;
+    }
+
+    /** {largest, smallest} of an object's photo-url-<width> fields, or null. */
+    static String[] legacySizes(JSONObject o) {
+        if (o == null) return null;
+        String largest = null, smallest = null;
+        int max = -1, min = Integer.MAX_VALUE;
+        java.util.Iterator<String> keys = o.keys();
+        while (keys.hasNext()) {
+            String k = keys.next();
+            if (!k.matches("photo-url-\\d+")) continue;
+            String url = o.optString(k);
+            if (!url.startsWith("https://") && !url.startsWith("http://")) continue;
+            int w = Integer.parseInt(k.substring("photo-url-".length()));
+            if (w > max) { max = w; largest = url; }
+            if (w < min) { min = w; smallest = url; }
+        }
+        return largest == null ? null : new String[]{largest, smallest};
     }
 
     private static void openInBrowser(String requestUrl) {

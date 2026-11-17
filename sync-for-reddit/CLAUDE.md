@@ -66,3 +66,19 @@ Emulator: AVD `sync34` (Android 14, arm64, rootable). Boot it headless with `emu
 - Everything checked by hand (curl probes, old-build comparisons, fuzzing) goes into a script or scenario above, so it is rerun every time.
 - Don't hardcode test URLs or post IDs: they drift (posts get removed, media expires). E2E scenarios find a suitable live post at run time (`scripts/e2e/live.py`) and fail as inconclusive if none exists. Recorded API responses for the offline unit tests are fine; they are data, not links.
 - During a Reddit incident (`reddit.statuspage.io`), features.py prints a WARN; re-run failures later before blaming a patch.
+
+## Current state and next steps (November 2026)
+
+- Every patch in the README table is implemented, unit-tested, covered by an e2e scenario with a passing negative
+  control, and verified on the emulator. Known unfixable: Pushshift features; the logged-out random NSFW pool
+  depends on Reddit search and is sometimes empty.
+- **Publishing the fork** (only when the user asks): create the public GitHub repo for the fork, push `sync-fixes` as
+  its `main` and push the tags; then watch the first run of `.github/workflows/release.yml` (it has never run; GPG
+  signing is optional and skipped without the `GPG_*` secrets). Local backup branches named `sync-fixes-backup-*`
+  hold old history with a non-noreply author and must never be pushed.
+- **Upstreaming** to ReVanced: read `UPSTREAMING.md` (GitLab, target `dev`, conventions, what to strip, how to split).
+- **Installing on a real phone** (only when the user asks; tests never touch phones): patch with the phone's
+  existing signing key so `adb install -r` keeps app data. See the skill's "Installing on a phone" note.
+- **YouTube ad wait:** blocking ads makes YouTube withhold the video for roughly the ad's length (~10 s); the
+  player shows an "Ad blocked" notice meanwhile. Avoiding the wait would need client spoofing or stream
+  extraction (NewPipe-style), which breaks whenever YouTube changes; not done on purpose.
