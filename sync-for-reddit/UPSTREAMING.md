@@ -106,3 +106,16 @@ maintainer prefers theirs. Commits that include their work carry `Co-authored-by
 > - Fix galleries: galleries open again (Reddit blocks `/api/info`; the post is read from `/comments/<id>`).
 > - Fix loading more comments: "View more" works again with usually one request per row instead of one per
 >   comment, so large threads don't hit Reddit's rate limit. A failed request keeps the row for a retry.
+
+## Other Sync merge requests (checked November 2026)
+
+- !6975 (ALSchwalm), `Fix swipe back gesture animation`: Samsung One UI 7+ black screen during swipe-to-return.
+  No overlap with this branch and nearly approved; leave it to its author, don't supersede.
+  Its review shows the maintainer's current preferences, worth applying to ours: `returnEarly()` instead of
+  hand-written early returns; `gettingFirstMethodDeclaratively("string") { … }` and
+  `getting { firstMethodDeclaratively { … } } using { otherMethod }` instead of manual class/method searches;
+  a resource patch that only supports a bytecode patch is unnamed and pulled in with `dependsOn()`;
+  Kotlin sequences over `getElementsByTagName` loops; descriptions such as "Disables transient blur and
+  flickering on new Android versions."
+- !5725 (wchill, merged) is the Redgifs fix our `Fix Redgifs API` change extends; !5692 (closed) was the
+  alternative it replaced. Mention !5725 in the MR that touches it.

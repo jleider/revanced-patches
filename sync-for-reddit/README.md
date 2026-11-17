@@ -130,3 +130,5 @@ See `CLAUDE.md` for verification stages, caches, device guards and timing output
 - `Fix galleries` and `Fix loading more comments` consolidate ideas from upstream merge requests !6999 by
   Bryan Ulate (patch name, permalink approach, credited there to RedReader) and !7000 by 0naught (gallery
   validation and test cases).
+- `Fix Redgifs API` (changed here to also answer the removed `/info` endpoint) builds on upstream !5725 by
+  wchill, itself based on JeffreyCA's fix for Apollo (Apollo-ImprovedCustomApi PR 67).
