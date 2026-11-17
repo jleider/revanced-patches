@@ -14,8 +14,17 @@ public class FixSLinksPatch extends BaseFixSLinksPatch {
         webViewActivityClass = WebViewActivity.class;
     }
 
+    /** Injection point. */
     public static boolean patchResolveSLink(String link) {
-        return INSTANCE.resolveSLink(link);
+        try {
+            // The shared resolver attaches the bearer token using a broad URL match.
+            // Check for a canonical HTTPS Reddit share link before handing it over.
+            String safeLink = SLinkGuard.safeSLink(link);
+            return safeLink != null && INSTANCE.resolveSLink(safeLink);
+        } catch (Exception ex) {
+            app.revanced.extension.shared.Logger.printException(() -> "Could not resolve the Reddit share link", ex);
+            return false;
+        }
     }
 
     public static void patchSetAccessToken(String accessToken) {
