@@ -926,6 +926,10 @@ public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/
 	public static final fun getSharedExtensionPatch ()Lapp/revanced/patcher/patch/Patch;
 }
 
+public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/gfycat/FixGfycatPatchKt {
+	public static final fun getFixGfycatPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
 public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/imageurls/FixRedditImageUrlsPatchKt {
 	public static final fun getFixRedditImageUrlsPatch ()Lapp/revanced/patcher/patch/Patch;
 }
