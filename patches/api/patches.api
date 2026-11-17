@@ -979,6 +979,10 @@ public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/
 	public static final fun getFixSLinksPatch ()Lapp/revanced/patcher/patch/Patch;
 }
 
+public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/status/FixRedditStatusAlertPatchKt {
+	public static final fun getFixRedditStatusAlertPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
 public final class app/revanced/patches/reddit/customclients/sync/syncforreddit/fix/thumbnail/FixPostThumbnailsPatchKt {
 	public static final fun getFixPostThumbnailsPatch ()Lapp/revanced/patcher/patch/Patch;
 }
